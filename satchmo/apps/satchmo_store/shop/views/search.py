@@ -1,8 +1,7 @@
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from product.models import Product
 from satchmo_store.shop import signals
-from signals_ahoy.signals import application_search
+from satchmo_utils.signals import application_search
 
 def search_view(request, template="shop/search.html"):
     """Perform a search based on keywords and categories in the form submission"""
@@ -22,8 +21,9 @@ def search_view(request, template="shop/search.html"):
     application_search.send(Product, request=request, 
         category=category, keywords=keywords, results=results)
 
-    context = RequestContext(request, {
+    context = {
             'results': results,
             'category' : category,
-            'keywords' : keywords})
-    return render_to_response(template, context_instance=context)
+            'keywords' : keywords
+    }
+    return render(request, template, context)

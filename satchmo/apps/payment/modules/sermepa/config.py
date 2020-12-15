@@ -10,7 +10,8 @@
 #   TODO: SERMEPA interface provides possibility of recurring payments, which
 #   could be probably used for SubscriptionProducts. This module doesn't support it.
 #
-from livesettings import *
+from livesettings.values import StringValue,ConfigurationGroup,BooleanValue,DecimalValue,PositiveIntegerValue,ModuleValue,MultipleStringValue,LongStringValue,IntegerValue
+from livesettings.functions import config_register_list
 from django.utils.translation import ugettext_lazy as _
 
 PAYMENT_GROUP = ConfigurationGroup('PAYMENT_SERMEPA',
@@ -33,6 +34,7 @@ config_register_list(
         'LABEL',
         description=_('English name for this group on the checkout screens'),
         default = 'Credit Card (via SERMEPA)',
+        dummy = _('Credit Card (via SERMEPA)'), # Force this to appear on po-files
         help_text = _('This will be passed to the translation utility'),
         ordering=10
         ),
@@ -92,6 +94,14 @@ config_register_list(
         description=_('Test signature code'),
         help_text=_('Your secret code used to sign transaction data in test payments'),
         ordering=200,
+        ),
+    BooleanValue(
+        PAYMENT_GROUP,
+        'EXTENDED_SIGNATURE',
+        description=_("Extended signature calculation"),
+        help_text=_("Consult your Sermepa documentation to know the differences between normal and extended signature calculation, and ask your provider which type of signature expects you to use. If possible, use extended signature."),
+        default=False,
+        ordering=105,
         ),
     # terminal
     IntegerValue(

@@ -1,4 +1,5 @@
-from livesettings import config_register, StringValue, IntegerValue, BooleanValue, MultipleStringValue
+from livesettings.functions import config_register
+from livesettings.values import StringValue, IntegerValue, BooleanValue, MultipleStringValue
 from satchmo_store.shop.config import SHOP_GROUP
 
 from django.utils.translation import ugettext_lazy as _
@@ -68,6 +69,13 @@ ACCOUNT_VERIFICATION = config_register(StringValue(SHOP_GROUP,
     choices=[('IMMEDIATE', _('Immediate')),
              ('EMAIL', _('Email'))]
     ))
+config_register(
+    BooleanValue(SHOP_GROUP,
+    'ALLOW_NICKNAME_USERNAME',
+    description=_("Nickname-Registration"),
+    help_text=_("If checked a user will be able to fill in an individual Nickname-Username at Account-Registration"),
+    default=False)
+)
 
 config_register(
     IntegerValue(SHOP_GROUP,

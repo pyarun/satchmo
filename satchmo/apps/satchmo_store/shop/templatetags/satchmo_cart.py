@@ -1,5 +1,5 @@
 from django import template
-from livesettings import config_value
+from livesettings.functions import config_value
 from l10n.utils import moneyfmt
 from tax.templatetags.satchmo_tax import CartitemLineTaxedTotalNode, CartTaxedTotalNode
 import logging
@@ -174,6 +174,6 @@ def cart_total(parser, token):
     else:
         show_discount = False
 
-    return CartTotalNode(cart, show_currency, show_tax)
+    return CartTotalNode(cart, show_currency, show_tax, show_discount)
 
 cart_total = register.tag(cart_total)

@@ -4,7 +4,7 @@ Created on 3 Mar 2009
 @author: dalore
 '''
 from django.utils.translation import ugettext as _
-from livesettings import config_get_group
+from livesettings.functions import config_get_group, config_value
 from payment.utils import get_processor_by_key
 from satchmo_store.shop.models import Cart, Order, OrderPayment
 import re
@@ -60,7 +60,8 @@ def do_charged(request, data):
     for item in order.orderitem_set.all():
         product = item.product
         product.total_sold += item.quantity
-        product.items_in_stock -= item.quantity
+        if config_value('PRODUCT','TRACK_INVENTORY'):
+            product.items_in_stock -= item.quantity
         product.save()
         
     # process payment
@@ -103,4 +104,6 @@ def notify_chargeamount(request, data):
     transaction_id = data['google-order-number']
     processor = get_processor_by_key('PAYMENT_GOOGLE')
     processor.record_payment(amount=data['latest-charge-amount'], transaction_id=transaction_id, order=order)
-
+    total_charged_amount = data['total-charge-amount']
+    if total_charged_amount >= order.total:
+        order.order_success()

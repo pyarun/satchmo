@@ -1,4 +1,5 @@
-from livesettings import *
+from livesettings.values import StringValue,ConfigurationGroup,BooleanValue,ModuleValue
+from livesettings.functions import config_register_list
 from django.utils.translation import ugettext_lazy as _
 
 PAYMENT_GROUP = ConfigurationGroup('PAYMENT_PURCHASEORDER',
@@ -28,6 +29,7 @@ config_register_list(
         'LABEL',
         description=_('English name for this group on the checkout screens'),
         default = 'Purchase Order',
+        dummy = _('Purchase Order'), # Force this to appear on po-files
         help_text = _('This will be passed to the translation utility')),
 
     StringValue(PAYMENT_GROUP,

@@ -1,4 +1,5 @@
-from livesettings import *
+from livesettings.values import StringValue,ConfigurationGroup,BooleanValue,DecimalValue,PositiveIntegerValue,ModuleValue,MultipleStringValue,LongStringValue
+from livesettings.functions import config_register_list
 from django.utils.translation import ugettext_lazy as _
 
 # this is so that the translation utility will pick up the string
@@ -45,6 +46,7 @@ config_register_list(
         'LABEL',
         description=_('English name for this group on the checkout screens'),
         default = 'Credit Cards',
+        dummy = _('Credit Cards'), # Force this to appear on po-files
         help_text = _('This will be passed to the translation utility')),
 
     StringValue(PAYMENT_GROUP,

@@ -1,4 +1,5 @@
-from livesettings import *
+from livesettings.values import StringValue,ConfigurationGroup,BooleanValue,DecimalValue,PositiveIntegerValue,ModuleValue,MultipleStringValue,LongStringValue
+from livesettings.functions import config_register_list
 from django.utils.translation import ugettext_lazy as _
 
 PAYMENT_GROUP = ConfigurationGroup('PAYMENT_GIFTCERTIFICATE',
@@ -33,6 +34,7 @@ config_register_list(
         'LABEL',
         description=_('English name for this group on the checkout screens'),
         default = 'Gift Certificate',
+        dummy = _('Gift Certificate'), # Force this to appear on po-files
         help_text = _('This will be passed to the translation utility')),
 
     BooleanValue(PAYMENT_GROUP,
@@ -40,6 +42,12 @@ config_register_list(
         description=_("Accept real payments"),
         help_text=_("False if you want to be in test mode"),
         default=False),
+
+    BooleanValue(PAYMENT_GROUP,
+        'EMAIL_RECIPIENT',
+        description=_("Send email to recipients"),
+        help_text=_("If the purchaser includes an email address, should we send a notification to them?"),
+        default=True),
 
     StringValue(PAYMENT_GROUP,
         'URL_BASE',

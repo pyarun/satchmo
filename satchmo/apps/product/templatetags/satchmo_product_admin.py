@@ -8,27 +8,6 @@ from satchmo_utils.urlhelper import reverse_admin_url
 
 register = template.Library()
 
-def js_make_select_readonly(select):
-    #This is really just a mini-template
-    #select must be a jquery object
-    return """
-    select = %(select)s;
-    value = select.attr("value");
-    if (value){
-        text = "";
-        for (c in select.children()){
-          if (select.children()[c].value == value){
-            text = select.children()[c].innerHTML;
-            break;
-          }
-        }
-        select.before("<strong>" + text + "</strong><input type=\\"hidden\\" name=\\"" + select.attr("name") + "\\" value=\\"" + value + "\\" \>");
-        select.remove();
-    }
-    """ % {'select':select}
-
-register.simple_tag(js_make_select_readonly)
-
 def edit_subtypes(product):
     output = '<ul>'
     subtypes = product.get_subtypes()
@@ -60,7 +39,7 @@ def list_variations(configurableproduct):
     from product.modules.configurable.models import ProductVariation
 
     opts = configurableproduct.get_all_options()
-    output = "{% load admin_modify adminmedia %}"
+    output = "{% load admin_static admin_modify %}"
     output += "<table>"
     for p_opt in opts:
         opt_strs = []
@@ -92,7 +71,7 @@ def list_variations(configurableproduct):
             <tr>
             <td>%s</td>
             <td/>
-            <td><a href="%s" class="add-another" id="add_productvariation"> <img src="{%% admin_media_prefix %%}img/admin/icon_addlink.gif" width="10" height="10" alt="Add ProductVariation"/> Add Variation</a></td>
+            <td><a href="%s" class="add-another" id="add_productvariation"> <img src="{%% static 'admin/img/admin/icon_addlink.gif' %%}" width="10" height="10" alt="Add ProductVariation"/> Add Variation</a></td>
             </tr>
             """ % (opt_str, add_url)
     output += "</table>"

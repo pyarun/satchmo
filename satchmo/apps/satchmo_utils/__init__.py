@@ -1,10 +1,12 @@
 from django.conf import settings
 import datetime
+import django
 import logging
 import os
 import random
 import sys
 import types
+import warnings
 
 log = logging.getLogger('shop.utils')
 
@@ -20,10 +22,15 @@ def add_month(date, n=1):
 
 def app_enabled(appname):
     """Check the app list to see if a named app is installed."""
-    from django.db import models
+    try:
+        from django.apps import apps
+        app_list = [app_config.models_module for app_config in apps.get_app_configs() if app_config.models_module is not None]
+    except ImportError:
+        from django.db import models
+        app_list = models.get_apps()
 
     all_apps = {}
-    for app in models.get_apps():
+    for app in app_list:
         n = app.__name__.split('.')[-2]
         if n  == appname:
             return True
@@ -58,6 +65,25 @@ def current_media_url(request):
         except AttributeError:
             media_url = media_url.replace('http://','https://')
     return media_url
+
+def current_static_url(request):
+    """Return the static_url, taking into account SSL."""
+    static_url = getattr(settings, 'STATIC_URL', None)
+    if not static_url:
+        if django.VERSION >= (1, 3):
+            warnings.warn("Undefined settings.STATIC_URL. This is a problem. Read docs.")
+        else:
+            warnings.warn("Undefined settings.STATIC_URL. It has been replaced by '%s'. "
+                    "It is normal for Django 1.2 in order to work with newer packages."
+                                % settings.MEDIA_URL, PendingDeprecationWarning)
+            static_url = settings.MEDIA_URL
+    secure = request_is_secure(request)
+    if secure:
+        try:
+            static_url = settings.STATIC_SECURE_URL
+        except AttributeError:
+            static_url = static_url.replace('http://','https://')
+    return static_url
 
 def is_scalar(maybe):
     """Test to see value is a string, an int, or some other scalar type"""

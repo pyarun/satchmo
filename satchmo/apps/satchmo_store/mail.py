@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.template import loader, Context, TemplateDoesNotExist
-from livesettings import config_value
+from livesettings.functions import config_value
 from satchmo_store.shop.signals import rendering_store_mail, sending_store_mail
 
 from socket import error as SocketError
@@ -61,11 +61,12 @@ def send_html_email(sender, send_mail_args=None, context=None, template_html=Non
         raise NoRecipientsException
 
     # prepare kwargs for EmailMultiAlternatives()
-    fail_silently = send_mail_args.pop('fail_silently')
-    send_mail_args['body'] = send_mail_args.pop('message') # the plain text part
-    send_mail_args['to'] = send_mail_args.pop('recipient_list')
+    multi_mail_args = send_mail_args.copy()
+    fail_silently = multi_mail_args.pop('fail_silently')
+    multi_mail_args['body'] = multi_mail_args.pop('message') # the plain text part
+    multi_mail_args['to'] = multi_mail_args.pop('recipient_list')
 
-    msg = EmailMultiAlternatives(**send_mail_args)
+    msg = EmailMultiAlternatives(**multi_mail_args)
     msg.attach_alternative(html_body, "text/html")
 
     # don't have to handle any errors, as send_store_mail() does so for us.
@@ -101,6 +102,9 @@ def send_store_mail(subject, context, template='', recipients_list=None,
         log.warn('No email address configured for the shop.  Using admin settings.')
         shop_email = settings.ADMINS[0][1]
 
+    if shop_name:
+        shop_email = "%s <%s>" % (shop_name, shop_email)
+    
     c_dict = {'shop_name': shop_name}
 
     if format_subject:
@@ -145,7 +149,7 @@ def send_store_mail(subject, context, template='', recipients_list=None,
         except ShouldNotSendMail:
             return
 
-        if not recipients:
+        if not send_mail_args.get('recipient_list'):
             raise NoRecipientsException
 
         send_mail(**send_mail_args)

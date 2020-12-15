@@ -2,12 +2,11 @@ from decimal import Decimal
 from django.conf import settings
 from django.core import urlresolvers
 from django.http import HttpResponse, HttpResponseRedirect
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from django.utils.http import urlencode
 from django.utils.translation import ugettext as _
 from django.views.decorators.cache import never_cache
-from livesettings import config_get_group, config_value
+from livesettings.functions import config_get_group, config_value
 from payment.config import gateway_live
 from payment.utils import get_processor_by_key
 from payment.views import payship
@@ -15,6 +14,7 @@ from satchmo_store.shop.models import Cart
 from satchmo_store.shop.models import Order, OrderPayment
 from satchmo_store.contact.models import Contact
 from satchmo_utils.dynamic import lookup_url, lookup_template
+from satchmo_utils.views import bad_or_missing
 from sys import exc_info
 from traceback import format_exception
 import logging
@@ -43,14 +43,11 @@ def confirm_info(request):
     tempCart = Cart.objects.from_request(request)
     if tempCart.numItems == 0 and not order.is_partially_paid:
         template = lookup_template(payment_module, 'shop/checkout/empty_cart.html')
-        return render_to_response(template,
-                                  context_instance=RequestContext(request))
+        return render(request, template)
 
     # Check if the order is still valid
     if not order.validate(request):
-        context = RequestContext(request,
-                                 {'message': _('Your order is no longer valid.')})
-        return render_to_response('shop/404.html', context_instance=context)
+        return render(request, 'shop/404.html', {'message': _('Your order is no longer valid.')})
 
     template = lookup_template(payment_module, 'shop/checkout/paypal/confirm.html')
     if payment_module.LIVE.value:
@@ -94,7 +91,11 @@ def confirm_info(request):
             if not item.product.is_subscription:
                 continue
 
-            recurring = {'product':item.product, 'price':item.product.price_set.all()[0].price.quantize(Decimal('.01')),}
+            if item.product.has_variants:
+                price = item.product.productvariation.get_qty_price(item.quantity, True)
+            else:
+                price = item.product.get_qty_price(item.quantity, True)
+            recurring = {'product':item.product, 'price':price.quantize(Decimal('.01'))}
             trial0 = recurring['product'].subscriptionproduct.get_trial_terms(0)
             if len(order_items) > 1 or trial0 is not None or recurring['price'] < order.balance:
                 recurring['trial1'] = {'price': order.balance,}
@@ -109,7 +110,7 @@ def confirm_info(request):
                     recurring['trial2']['expire_unit'] = trial1.subscription.expire_unit[0]
                     recurring['trial2']['price'] = trial1.price
 
-    ctx = RequestContext(request, {'order': order,
+    ctx = {'order': order,
      'post_url': url,
      'default_view_tax': default_view_tax,
      'business': account,
@@ -118,9 +119,9 @@ def confirm_info(request):
      'invoice': order.id,
      'subscription': recurring,
      'PAYMENT_LIVE' : gateway_live(payment_module)
-    })
+    }
 
-    return render_to_response(template, context_instance=ctx)
+    return render(request, template, ctx)
 confirm_info = never_cache(confirm_info)
 
 @csrf_exempt
@@ -142,7 +143,7 @@ def ipn(request):
     try:
         data = request.POST
         log.debug("PayPal IPN data: " + repr(data))
-        if not confirm_ipn_data(data, PP_URL):
+        if not confirm_ipn_data(request.raw_post_data, PP_URL):
             return HttpResponse()
 
         if not 'payment_status' in data or not data['payment_status'] == "Completed":
@@ -181,24 +182,17 @@ def ipn(request):
                 for item in order.orderitem_set.filter(product__subscriptionproduct__recurring=True, completed=False):
                     item.completed = True
                     item.save()
-
-            for cart in Cart.objects.filter(customer=order.contact):
-                cart.empty()
+            # We no longer empty the cart here. We do it on checkout success.
 
     except:
         log.exception(''.join(format_exception(*exc_info())))
 
     return HttpResponse()
 
-def confirm_ipn_data(data, PP_URL):
+def confirm_ipn_data(query_string, PP_URL):
     # data is the form data that was submitted to the IPN URL.
 
-    newparams = {}
-    for key in data.keys():
-        newparams[key] = data[key]
-
-    newparams['cmd'] = "_notify-validate"
-    params = urlencode(newparams)
+    params = 'cmd=_notify-validate&' + query_string
 
     req = urllib2.Request(PP_URL)
     req.add_header("Content-type", "application/x-www-form-urlencoded")
@@ -213,3 +207,31 @@ def confirm_ipn_data(data, PP_URL):
         return False
 
     return True
+
+
+def success(request):
+    """
+    The order has been succesfully processed.
+    We clear out the cart but let the payment processing get called by IPN
+    """
+    try:
+        order = Order.objects.from_request(request)
+    except Order.DoesNotExist:
+        return bad_or_missing(request, _('Your order has already been processed.'))
+
+    # Added to track total sold for each product
+    for item in order.orderitem_set.all():
+        product = item.product
+        product.total_sold += item.quantity
+        if config_value('PRODUCT','TRACK_INVENTORY'):
+            product.items_in_stock -= item.quantity
+        product.save()
+
+    # Clean up cart now, the rest of the order will be cleaned on paypal IPN
+    for cart in Cart.objects.filter(customer=order.contact):
+        cart.empty()
+
+    del request.session['orderID']
+    return render(request, 'shop/checkout/success.html', {'order': order})
+
+success = never_cache(success)

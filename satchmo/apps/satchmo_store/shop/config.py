@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import urlparse
 from decimal import Decimal
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
-from livesettings import config_register, BooleanValue, StringValue, \
-    ConfigurationGroup, PositiveIntegerValue, \
-    DecimalValue
+from livesettings.functions import config_register
+from livesettings.values import BooleanValue, StringValue, ConfigurationGroup, PositiveIntegerValue, DecimalValue
 
 
 SHOP_GROUP = ConfigurationGroup('SHOP', _('Satchmo Shop Settings'), ordering=0)
 
+project_root = os.path.dirname(os.path.normpath(sys.modules[os.environ['DJANGO_SETTINGS_MODULE']].__file__))
+# default value `project_root + 'static'` is currently the best common for all Django 1.2 - 1.4
 default_icon_url = urlparse.urlunsplit(
     ('file',
      '',
-     os.path.join(settings.MEDIA_ROOT, 'images/sample-logo.bmp'),
+     os.path.join(project_root, 'static', 'images/sample-logo.bmp'),
      '',
      '')
     )

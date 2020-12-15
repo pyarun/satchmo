@@ -4,11 +4,10 @@
 
 from django import http
 from django.conf import settings
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from django.utils.translation import ugettext_lazy as _
 
-from livesettings import config_value
+from livesettings.functions import config_value
 from satchmo_store.contact.models import Contact
 from payment.config import gateway_live
 from payment.forms import CreditPayShipForm, SimplePayShipForm
@@ -40,8 +39,7 @@ def pay_ship_info_verify(request, payment_module):
     tempCart = Cart.objects.from_request(request)
     if tempCart.numItems == 0:
         template = lookup_template(payment_module, 'shop/checkout/empty_cart.html')
-        return (False, render_to_response(template,
-                                          context_instance=RequestContext(request)))
+        return (False, render(request, template))
 
     return (True, contact, tempCart)
 
@@ -135,7 +133,7 @@ def simple_pay_ship_process_form(request, contact, working_cart, payment_module,
                 order_data['shipping'] = order.shipping_model
             ordershippable = order.is_shippable
         except Order.DoesNotExist:
-            pass
+            ordershippable = False
 
         form = SimplePayShipForm(request, payment_module, order_data)
         if allow_skip:
@@ -162,11 +160,11 @@ def simple_pay_ship_process_form(request, contact, working_cart, payment_module,
 def pay_ship_render_form(request, form, template, payment_module, cart):
     template = lookup_template(payment_module, template)
             
-    ctx = RequestContext(request, {
+    ctx = {
         'form': form,
         'PAYMENT_LIVE': gateway_live(payment_module),
-        })
-    return render_to_response(template, context_instance=ctx)
+    }
+    return render(request, template, ctx)
 
 def base_pay_ship_info(request, payment_module, form_handler, template):
     results = pay_ship_info_verify(request, payment_module)
@@ -176,7 +174,13 @@ def base_pay_ship_info(request, payment_module, form_handler, template):
     contact = results[1]
     working_cart = results[2]
 
-    results = form_handler(request, contact, working_cart, payment_module)
+    # possibly hide the shipping based on store config
+    shiphide = config_value('SHIPPING','HIDING')
+    if shiphide in ('YES', 'DESCRIPTION'):
+        allow_skip = True
+    else:
+        allow_skip = False
+    results = form_handler(request, contact, working_cart, payment_module, allow_skip)
     if results[0]:
         return results[1]
 

@@ -3,8 +3,8 @@
 
 {% block navbar %}
 <li class="first"><a href="{{ shop_base }}/">{% trans "Home" %}</a></li>
-<li><a href="{% url satchmo_cart %}">{% trans "Cart" %}</a></li>
-<li><a href="{% url satchmo_cart %}">{% trans "Notice" %}</a></li>
+<li><a href="{% url 'satchmo_cart' %}">{% trans "Cart" %}</a></li>
+<li><a href="{% url 'satchmo_cart' %}">{% trans "Notice" %}</a></li>
 {% endblock %}
 
 

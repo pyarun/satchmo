@@ -1,4 +1,4 @@
-from livesettings import config_value
+from livesettings.functions import config_value
 from payment.listeners import capture_on_ship_listener
 from product.models import Product
 from product.listeners import default_product_search_listener, discount_used_listener
@@ -7,7 +7,7 @@ from satchmo_store.mail import send_html_email
 from satchmo_store.shop import signals
 from satchmo_store.shop.exceptions import OutOfStockError
 from satchmo_store.shop.models import Order
-from signals_ahoy.signals import application_search
+from satchmo_utils.signals import application_search
 
 import notification
 import logging

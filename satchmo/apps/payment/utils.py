@@ -1,10 +1,10 @@
 from decimal import Decimal
-from livesettings import config_get
-from livesettings import config_get_group
-from payment import active_gateways
-from satchmo_store.shop.models import Order, OrderItem, OrderItemDetail
+from livesettings.functions import config_get_group, config_value
+from satchmo_store.shop.models import Order, OrderItem, OrderItemDetail, OrderCart
 from satchmo_store.shop.signals import satchmo_post_copy_item_to_order
 from shipping.utils import update_shipping
+from satchmo_store.mail import send_store_mail
+from django.utils.translation import ugettext as _
 import logging
 
 log = logging.getLogger('payment.utils')
@@ -46,12 +46,6 @@ def get_or_create_order(request, working_cart, contact, data):
         shipping=shipping, discount=discount, notes=notes, update=update)
     request.session['orderID'] = order.id
     return order
-
-def get_gateway_by_settings(gateway_settings, settings={}):
-    log.debug('getting gateway by settings: %s', gateway_settings.key)
-    processor_module = gateway_settings.MODULE.load_module('processor')
-    gateway_settings = get_gateway_settings(gateway_settings, settings=settings)
-    return processor_module.PaymentProcessor(settings=gateway_settings)
 
 def get_processor_by_key(key):
     """
@@ -133,30 +127,66 @@ def update_orderitems(new_order, cart, update=False):
     """Update the order with all cart items, first removing all items if this
     is an update.
     """
-    if update:
-        new_order.remove_all_items()
-    else:
-        # have to save first, or else we can't add orderitems
-        new_order.site = cart.site
-        new_order.save()
+    if not isinstance(cart, OrderCart):
+        if update:
+            new_order.remove_all_items()
+        else:
+            # have to save first, or else we can't add orderitems
+            new_order.site = cart.site
+            new_order.save()
 
-    # Add all the items in the cart to the order
-    for item in cart.cartitem_set.all():
-        new_order_item = OrderItem(order=new_order,
-            product=item.product,
-            quantity=item.quantity,
-            unit_price=item.unit_price,
-            line_item_price=item.line_total)
+        # Add all the items in the cart to the order
+        for item in cart.cartitem_set.all():
+            new_order_item = OrderItem(order=new_order,
+                product=item.product,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                line_item_price=item.line_total)
 
-        update_orderitem_for_subscription(new_order_item, item)
-        update_orderitem_details(new_order_item, item)
+            update_orderitem_for_subscription(new_order_item, item)
+            update_orderitem_details(new_order_item, item)
 
-        # Send a signal after copying items
-        # External applications can copy their related objects using this
-        satchmo_post_copy_item_to_order.send(
-                cart,
-                cartitem=item,
-                order=new_order, orderitem=new_order_item
-                )
-
+            # Send a signal after copying items
+            # External applications can copy their related objects using this
+            satchmo_post_copy_item_to_order.send(
+                    cart,
+                    cartitem=item,
+                    order=new_order, orderitem=new_order_item
+                    )
+            
     new_order.recalculate_total()
+
+def send_gift_certificate_by_email(gc):
+    """ Helper function to send email messages to gift certificate recipients
+    """
+    ctx = {
+        'message': gc.message,
+        'addressee': gc.recipient_email,
+        'code': gc.code,
+        'balance':gc.balance,
+        'purchased_by': gc.purchased_by
+        }
+    subject = _('Your Gift Certificate')
+
+    send_store_mail(
+        subject,
+        ctx,
+        template = 'shop/email/gift_certificate_recipient.txt',
+        template_html='shop/email/gift_certificate_recipient.html',
+        recipients_list=[gc.recipient_email,],
+        fail_silently=True,
+        )
+
+def gift_certificate_processor(order):
+    """ If an order has gift certificates, then we'll try to send emails to the recipients
+    """
+    from payment.modules.giftcertificate.models import GiftCertificate
+    email_sent = False
+    send_email = config_value('PAYMENT_GIFTCERTIFICATE','EMAIL_RECIPIENT')
+    if send_email:
+        gcs = GiftCertificate.objects.filter(order=order)
+        for gc in gcs:
+            if gc.recipient_email:
+                send_gift_certificate_by_email(gc)
+                email_sent = True
+    return email_sent

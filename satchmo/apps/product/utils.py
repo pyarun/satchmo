@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.contrib.sites.models import Site
 from django.db.models import Q
-from livesettings import config_value
+from livesettings.functions import config_value
 from l10n.utils import moneyfmt
 from product.models import Option, ProductPriceLookup, OptionGroup, Discount, Product, split_option_unique_id
 from satchmo_utils.numbers import round_decimal
@@ -99,6 +99,9 @@ def productvariation_details(product, include_tax, user, create=False):
                 detail['TAXED'] = {}
                 if use_discount:
                     detail['TAXED_SALE'] = {}
+
+            if detl.productimage_set:
+                    detail['ADDITIONAL_IMAGES'] = [u"%s" % prodimg.picture for prodimg in detl.productimage_set.all()]
 
             details[key] = detail
 
@@ -213,8 +216,6 @@ def serialize_options(product, selected_options=()):
         for v in values:
             v['items'] = _sort_options(v['items'])
 
-    log.debug('serialized: %s', values)
-
     log.debug('Serialized Options %s: %s', product.product.slug, values)
     return values
 
@@ -233,7 +234,7 @@ def validation_simple(value, obj=None):
     Validates that at least one character has been entered.
     Not change is made to the value.
     """
-    if len(value) > 1:
+    if len(value) >= 1:
         return True, value
     else:
         return False, value

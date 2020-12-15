@@ -4,9 +4,6 @@
 
 {% block extrahead %}
 {{ block.super }}
-{% comment %}
-jquery script should've already been added in admin/product/change_form.html, so don't add it again here
-{% endcomment %}
 {% endblock %}
 
 {% block after_related_objects %}
@@ -15,7 +12,7 @@ jquery script should've already been added in admin/product/change_form.html, so
 {% comment %} Edit form {% endcomment %}
 <fieldset class="module">
 <h2>{% trans "Helpers" %}</h2>
-<ul><li><a href="{% url satchmo_admin_variation_manager original.pk %}">{% trans "Variation Manager" %}</a></li></ul>
+<ul><li><a href="{% url 'satchmo_admin_variation_manager' original.pk %}">{% trans "Variation Manager" %}</a></li></ul>
 </fieldset>
 <fieldset class="module">
 <h2>{% trans "Variations" %}</h2>

@@ -1,11 +1,12 @@
 from decimal import Decimal
+from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core import urlresolvers
 from django.core.urlresolvers import reverse as url
 from django.test import TestCase
 from django.test.client import Client
 from l10n.models import *
-from livesettings import config_get, config_get_group
+from livesettings.functions import config_get, config_get_group
 from payment import utils
 from product.models import *
 from satchmo_store.contact.models import *
@@ -131,14 +132,17 @@ class TestModulesSettings(TestCase):
 #         self.assertEqual(gc.usages.count(), 1)
 
 class TestMinimumOrder(TestCase):
-    fixtures = ['l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
 
     def setUp(self):
         # Every test needs a client
         self.client = Client()
+        self.old_language_code = settings.LANGUAGE_CODE
+        settings.LANGUAGE_CODE = 'en-us'
 
     def tearDown(self):
         keyedcache.cache_delete()
+        settings.LANGUAGE_CODE = self.old_language_code
 
     def test_checkout_minimums(self):
         """
@@ -180,7 +184,7 @@ class TestMinimumOrder(TestCase):
         self.assertContains(response, "Billing Information", count=1, status_code=200)
 
 class TestPaymentHandling(TestCase):
-    fixtures = ['l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml', 'initial_data.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
 
     def setUp(self):
         self.client = Client()

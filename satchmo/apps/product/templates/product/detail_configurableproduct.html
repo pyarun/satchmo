@@ -6,12 +6,13 @@
 {% load satchmo_currency satchmo_category%}
 {% load satchmo_discounts satchmo_tax %}
 {% load app_plugins %}
+{% load satchmo_thumbnail %}
 
 {% block extra-head %}
 
 {% include "shop/_jquery.html" %}
 {% include "shop/_jquery_form.html" %}
-<script type="text/javascript" src="{{media_url}}js/satchmo_product.js"></script>
+<script type="text/javascript" src="{{ STATIC_URL }}js/satchmo_product.js"></script>
 {% blackbird_logging %}
 <script type="text/javascript">{# Javascript which is generated uniquely for each page #}
 satchmo.default_view_tax = {% if default_view_tax %}true{% else %}false{% endif %};
@@ -24,6 +25,10 @@ $(function() {
     satchmo.update_price();
     $('.priced').change(function() { satchmo.update_price() });
 });
+
+// generate thumbnails for all alternate images
+satchmo.thumbnails = new Array();
+{{ details|js_thumbnail_array:"width=280,height=280" }}
 </script>
 {% endblock %}
 
@@ -35,10 +40,13 @@ $(function() {
 	<span id="price">{{ product|discount_price:sale|currency }}</span>
 	{% endspaceless %}</h3>
 
+<span id="product_images">
 {% for pic in product.productimage_set.all %}
-    {% thumbnail pic.picture 280x280 as image %}
-    <img src="{{ image }}" width="{{ image.width }}" height="{{ image.height }}" />
+    {% thumbnail pic.picture "280x280" as image %}
+    <img src="{{ image.url }}" width="{{ image.width }}" height="{{ image.height }}" />
+    {% endthumbnail %}
 {% endfor %}
+</span>
 
 {% with product.translated_attributes as atts %}{% if atts %}
 <p class="productattributes">
@@ -49,7 +57,7 @@ $(function() {
 {% endif %}{% endwith %}
 
 {% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
-<form id="options" action="{% url satchmo_smart_add %}" method="post">{% csrf_token %}
+<form id="options" action="{% url 'satchmo_smart_add' %}" method="post">{% csrf_token %}
 {% if options %}
 <p>{% trans "Please choose your options" %}:</p>
 {% endif %}

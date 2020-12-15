@@ -1,6 +1,6 @@
 from decimal import Decimal
 from django import template
-from livesettings import config_value
+from livesettings.functions import config_value
 from product.utils import calc_discounted_by_percentage, find_best_auto_discount
 from tax.templatetags import satchmo_tax
 
@@ -45,12 +45,21 @@ def discount_cart_total(cart, discount):
 
 register.filter('discount_cart_total', discount_cart_total)
 
+def discount_amount_cart(total_amount, discount):
+    if discount and discount.amount and not discount.percentage:
+        if total_amount > discount.amount:
+            total_amount -= discount.amount
+        else:
+            total_amount = Decimal('1.00')  
+    return total_amount
+    
 def untaxed_discount_cart_total(cart, discount):
     """Returns the discounted total for this cart"""
     total = Decimal('0.00')
 
     for item in cart:
         total += untaxed_discount_line_total(item, discount)
+    total = discount_amount_cart(total, discount)
     return total
 
 register.filter('untaxed_discount_cart_total', untaxed_discount_cart_total)
@@ -61,7 +70,7 @@ def taxed_discount_cart_total(cart, discount):
 
     for item in cart:
         total += taxed_discount_line_total(item, discount)
-
+    total = discount_amount_cart(total, discount)
     return total
 
 register.filter('taxed_discount_cart_total', taxed_discount_cart_total)
@@ -181,3 +190,33 @@ def taxed_discount_saved(product, discount):
         return Decimal('0.00')
 
 register.filter('taxed_discount_saved', taxed_discount_saved)
+
+def discount_line_unit_price(cartitem, discount):
+    """Returns the discounted unit-price for this cart item, including tax if that is the default."""
+    if config_value('TAX', 'DEFAULT_VIEW_TAX'):
+        return taxed_discount_line_unit_price(cartitem, discount)
+    else:
+        return untaxed_discount_line_unit_price(cartitem, discount)
+
+register.filter('discount_line_unit_price', discount_line_unit_price)
+
+def untaxed_discount_line_unit_price(cartitem, discount):
+    """Returns the discounted line unit-price for this cart item"""
+    price = cartitem.unit_price
+    if discount and discount.valid_for_product(cartitem.product):
+        price = calc_discounted_by_percentage(price, discount.percentage)
+
+    return price
+
+register.filter('untaxed_discount_line_unit_price', untaxed_discount_line_unit_price)
+
+def taxed_discount_line_unit_price(cartitem, discount):
+    """Returns the discounted line unit_price for this cart item with taxes included."""
+    price = untaxed_discount_line_unit_price(cartitem, discount)
+    taxer = satchmo_tax._get_taxprocessor()
+    price = price + taxer.by_price(cartitem.product.taxClass, price)
+
+    return price
+
+register.filter('taxed_discount_line_unit_price', taxed_discount_line_unit_price)
+

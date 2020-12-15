@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from django.test import TestCase
+from django.utils import timezone
 from models import Carrier, QuantityTier, Shipper
 
 def make_tiers(carrier, prices, expires=None):
@@ -34,7 +35,7 @@ class TieredCarrierPricingTest(TestCase):
     fixtures = []
 
     def setUp(self):
-        self.carrier = Carrier(name="pricing", active=True)
+        self.carrier = Carrier(key="pricing", active=True)
         self.carrier.save()
         t = QuantityTier(carrier=self.carrier, 
             quantity=Decimal('1'),
@@ -65,7 +66,7 @@ class TieredCarrierExpiringTest(TestCase):
     fixtures = []
 
     def setUp(self):
-        self.carrier = Carrier(name="pricing", active=True)
+        self.carrier = Carrier(key="pricing", active=True)
         self.carrier.save()
 
         base_prices = (
@@ -95,7 +96,7 @@ class TieredCarrierExpiringTest(TestCase):
 
     def testNotExpired(self):
         
-        now = datetime.now()
+        now = timezone.now()
         nextyear = datetime(now.year+1, now.month, now.day)
         sale_prices = (
             (1, 1, 0),

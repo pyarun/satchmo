@@ -6,7 +6,6 @@ from django.test.client import Client
 from django.utils.encoding import smart_str
 from keyedcache import cache_delete
 from l10n.models import Country
-from livesettings import config_value, config_get
 from product.models import Product
 from product.utils import rebuild_pricing
 from satchmo_ext.wishlist.models import *
@@ -34,7 +33,7 @@ def get_step1_post_data(US):
     }
 
 class WishTest(TestCase):
-    fixtures = ['l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
 
     def setUp(self):
         # Every test needs a client
@@ -70,7 +69,7 @@ class WishTest(TestCase):
         self.assertContains(response, "Sorry, you must be", count=1, status_code=200)
     
 class WishTestLoggedIn(TestCase):
-    fixtures = ['l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml', 'sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
     
     def setUp(self):
         self.client = Client()

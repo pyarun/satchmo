@@ -50,7 +50,7 @@ class PaymentProcessor(BasePaymentProcessor):
             'demo'	: self.demo,
 
             # Customer data
-            'name'  	: data.contact.first_name + u' ' + data.contact.last_name,
+            'name'  	: data.bill_first_name + u' ' + data.bill_last_name,
             'address1'	: data.full_bill_street,
             'city'	: data.bill_city,
             'state' 	: data.bill_state,
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     # This is for testing - enabling you to run from the command line & make sure everything is ok
     #####
     import os
-    from livesettings import config_get_group
+    from livesettings.functions import config_get_group
     from decimal import Decimal
 
     # Set up some dummy classes to mimic classes being passed through Satchmo

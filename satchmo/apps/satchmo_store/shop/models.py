@@ -11,18 +11,20 @@ from django.db import models
 from django.utils.encoding import force_unicode
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext, ugettext_lazy as _
+from django.utils import timezone
+
 from l10n.models import Country
 from l10n.utils import moneyfmt
-from livesettings import ConfigurationSettings, config_value
-from payment.fields import PaymentChoiceCharField
+from livesettings.functions import ConfigurationSettings, config_value
 from product.models import Discount, Product, Price, get_product_quantity_adjustments
 from product.prices import PriceAdjustmentCalc, PriceAdjustment
 from satchmo_store.contact.models import Contact
 from satchmo_utils.fields import CurrencyField
 from satchmo_utils.numbers import trunc_decimal
-from shipping.fields import ShippingChoiceCharField
+import shipping.fields
+import payment.config
+#from satchmo_utils.iterchoices import iterchoices_db
 from tax.utils import get_tax_processor
-import datetime
 import keyedcache
 import logging
 import operator
@@ -167,6 +169,7 @@ class NullCart(object):
     customer = None
     total = Decimal("0")
     numItems = 0
+    is_shippable = False
 
     def add_item(self, *args, **kwargs):
         pass
@@ -185,6 +188,9 @@ class NullCart(object):
 
     def __len__(self):
         return 0
+
+    def save(self):
+        pass
 
 class OrderCart(NullCart):
     """Allows us to fake a cart if we are reloading an order."""
@@ -207,13 +213,14 @@ class OrderCart(NullCart):
 
     total = property(_total)
 
-    is_shippable = False
-
     def __str__(self):
         return "OrderCart (%i) = %i" % (self._order.id, len(self))
 
     def __len__(self):
         return self.numItems
+
+    def __iter__(self):
+        return iter(self.cartitem_set.all())
 
 class CartManager(models.Manager):
 
@@ -347,7 +354,7 @@ class Cart(models.Model):
                         try:
                             similarItem.details.get(
                                     name=detail['name'],
-                                    value=str(detail['value']),     # typecasting for Postgresql
+                                    value=unicode(detail['value']),     # typecasting for Postgresql
                                     price_change=detail['price_change']
                                     )
                         except CartItemDetails.DoesNotExist:
@@ -367,7 +374,10 @@ class Cart(models.Model):
             details=details)
 
         if not alreadyInCart:
-            self.cartitem_set.add(item_to_modify)
+            try:
+                self.cartitem_set.add(item_to_modify, bulk=False)
+            except TypeError:
+                self.cartitem_set.add(item_to_modify)
 
         item_to_modify.quantity += number_added
         item_to_modify.save()
@@ -382,7 +392,8 @@ class Cart(models.Model):
         item_to_modify.quantity -= number_removed
         if item_to_modify.quantity <= 0:
             item_to_modify.delete()
-        self.save()
+        else:
+            item_to_modify.save()
 
 
     def merge_carts(self, src_cart):
@@ -403,7 +414,7 @@ class Cart(models.Model):
     def save(self, **kwargs):
         """Ensure we have a date_time_created before saving the first time."""
         if not self.pk:
-            self.date_time_created = datetime.datetime.now()
+            self.date_time_created = timezone.now()
         try:
             site = self.site
         except Site.DoesNotExist:
@@ -425,9 +436,21 @@ class Cart(models.Model):
         for cartitem in self.cartitem_set.all():
             if cartitem.is_shippable:
                 p = cartitem.product
-                q =  int(cartitem.quantity.quantize(Decimal('0'), ROUND_CEILING))
+                q = int(cartitem.quantity.quantize(Decimal('0'), ROUND_CEILING))
                 for single in range(0, q):
                     items.append(p)
+        return items
+
+    def get_shipment_by_amount(self):
+        """
+        Returna list of shippable products, with it's quantity
+        """
+        items = []
+        for cartitem in self.cartitem_set.all():
+            if cartitem.is_shippable:
+                p = cartitem.product
+                q = int(cartitem.quantity.quantize(Decimal('0'), ROUND_CEILING))
+                items.append((q,p))
         return items
 
     class Meta:
@@ -608,6 +631,23 @@ class OrderManager(models.Manager):
             pass
         return False
 
+class OrderVariable(models.Model):
+    order = models.ForeignKey("Order", related_name="variables")
+    key = models.SlugField(_('key'), )
+    value = models.CharField(_('value'), max_length=100)
+
+    class Meta:
+        ordering=('key',)
+        verbose_name = _("Order variable")
+        verbose_name_plural = _("Order variables")
+
+    def __unicode__(self):
+        if len(self.value)>10:
+            v = self.value[:10] + '...'
+        else:
+            v = self.value
+        return u"OrderVariable: %s=%s" % (self.key, v)
+
 class Order(models.Model):
     """
     Orders contain a copy of all the information at the time the order was
@@ -642,11 +682,10 @@ class Order(models.Model):
     method = models.CharField(_("Order method"),
         choices=ORDER_CHOICES, max_length=50, blank=True)
     shipping_description = models.CharField(_("Shipping Description"),
-        max_length=50, blank=True, null=True)
+        max_length=200, blank=True, null=True)
     shipping_method = models.CharField(_("Shipping Method"),
-        max_length=50, blank=True, null=True)
-    shipping_model = ShippingChoiceCharField(_("Shipping Models"),
-        max_length=30, blank=True, null=True)
+        max_length=200, blank=True, null=True)
+    shipping_model = models.CharField(_("Shipping Models"), max_length=30, blank=True, null=True) # choices=iterchoices_db(shipping.fields.shipping_choices),
     shipping_cost = CurrencyField(_("Shipping Cost"),
         max_digits=18, decimal_places=10, blank=True, null=True)
     shipping_discount = CurrencyField(_("Shipping Discount"),
@@ -809,11 +848,21 @@ class Order(models.Model):
         """Given the addressee name, try to return a first name"""
         return ' '.join(self.ship_addressee.split()[0:-1]) or ''
     ship_first_name = property(_ship_first_name)
-        
+
     def _ship_last_name(self):
         """Given the addressee name, try to return a last name"""
         return ' '.join(self.ship_addressee.split()[-1:]) or ''
     ship_last_name = property(_ship_last_name)
+
+    def _bill_first_name(self):
+        """Given the addressee name, try to return a billing first name. Default to contact"""
+        return ' '.join(self.bill_addressee.split()[0:-1]) or self.contact.first_name
+    bill_first_name = property(_bill_first_name)
+
+    def _bill_last_name(self):
+        """Given the addressee name, try to return a billing last name. Default to contact."""
+        return ' '.join(self.bill_addressee.split()[-1:]) or self.contact.last_name
+    bill_last_name = property(_bill_last_name)
 
     def _discounted_sub_total(self):
         return self.sub_total - self.item_discount
@@ -852,7 +901,7 @@ class Order(models.Model):
         the create_date.
         """
         if not self.pk:
-            self.time_stamp = datetime.datetime.now()
+            self.time_stamp = timezone.now()
             self.copy_addresses()
         super(Order, self).save(**kwargs) # Call the "real" save() method.
 
@@ -934,20 +983,6 @@ class Order(models.Model):
             itemprices.append(lineitem.sub_total)
             fullprices.append(lineitem.line_item_price)
 
-        shipprice = Price()
-        shipprice.price = self.shipping_cost
-        shipadjust = PriceAdjustmentCalc(shipprice)
-        if 'Shipping' in discounts:
-            shipadjust += PriceAdjustment('discount', _('Discount'), discounts['Shipping'])
-
-        signals.satchmo_shipping_price_query.send(self, adjustment=shipadjust)
-        shipdiscount = shipadjust.total_adjustment()
-        self.shipping_discount = shipdiscount
-        total_discount += shipdiscount
-        #log.debug('total_discount (+ship): %s', total_discount)
-
-        self.discount = total_discount
-
         if itemprices:
             item_sub_total = reduce(operator.add, itemprices)
         else:
@@ -959,6 +994,20 @@ class Order(models.Model):
             full_sub_total = zero
 
         self.sub_total = full_sub_total
+
+        shipprice = Price()
+        shipprice.price = self.shipping_cost
+        shipadjust = PriceAdjustmentCalc(shipprice)
+        if 'Shipping' in discounts:
+            shipadjust += PriceAdjustment('discount', _('Discount'), discounts['Shipping'])
+
+        signals.satchmo_shipping_price_query.send(self, adjustment=shipadjust, item_discount=total_discount)
+        shipdiscount = shipadjust.total_adjustment()
+        self.shipping_discount = shipdiscount
+        total_discount += shipdiscount
+        #log.debug('total_discount (+ship): %s', total_discount)
+
+        self.discount = total_discount
 
         taxProcessor = get_tax_processor(self)
         totaltax, taxrates = taxProcessor.process()
@@ -996,7 +1045,7 @@ class Order(models.Model):
 
     def order_success(self):
         """Run each item's order_success method."""
-        log.info("Order success: %s", self)
+        log.info("Order success: %s" % self)
         for orderitem in self.orderitem_set.all():
             subtype = orderitem.product.get_subtype_with_attr('order_success')
             if subtype:
@@ -1017,7 +1066,7 @@ class Order(models.Model):
 
     def _paid_in_full(self):
         """True if total has been paid"""
-        return self.balance == Decimal('0.00')
+        return self.balance <= Decimal('0.00')
     paid_in_full = property(fget=_paid_in_full)
 
     def _has_downloads(self):
@@ -1100,7 +1149,7 @@ class OrderItem(models.Model):
     A line item on an order.
     """
     order = models.ForeignKey(Order, verbose_name=_("Order"))
-    product = models.ForeignKey(Product, verbose_name=_("Product"))
+    product = models.ForeignKey(Product, verbose_name=_("Product"), on_delete=models.PROTECT)
     quantity = models.DecimalField(_("Quantity"),  max_digits=18,  decimal_places=6)
     unit_price = CurrencyField(_("Unit price"),
         max_digits=18, decimal_places=10)
@@ -1119,7 +1168,9 @@ class OrderItem(models.Model):
         return self.product.translated_name()
 
     def _get_category(self):
-        return(self.product.get_category.translated_name())
+        category = self.product.get_category
+        if category:
+            return category.translated_name()            
     category = property(_get_category)
 
     def _is_shippable(self):
@@ -1216,7 +1267,7 @@ class OrderStatus(models.Model):
 
     def save(self, **kwargs):
         if not self.pk and not self.time_stamp:
-            self.time_stamp = datetime.datetime.now()
+            self.time_stamp = timezone.now()
         super(OrderStatus, self).save(**kwargs)
         self.order.update_status(self.status)
 
@@ -1227,10 +1278,8 @@ class OrderStatus(models.Model):
         get_latest_by = 'time_stamp'
 
 class OrderPaymentBase(models.Model):
-    payment = PaymentChoiceCharField(_("Payment Method"),
-        max_length=25, blank=True)
-    amount = CurrencyField(_("amount"),
-        max_digits=18, decimal_places=10, blank=True, null=True)
+    payment = models.CharField(_("Payment Method"), max_length=25, blank=True) # choices=iterchoices_db(payment.config.labelled_gateway_choices),
+    amount = CurrencyField(_("amount"), max_digits=18, decimal_places=10, blank=True, null=True)
     time_stamp = models.DateTimeField(_("timestamp"), blank=True, null=True)
     transaction_id = models.CharField(_("Transaction ID"), max_length=45, blank=True, null=True)
     details = models.CharField(_("Details"), max_length=255, blank=True, null=True)
@@ -1251,7 +1300,7 @@ class OrderPaymentBase(models.Model):
 
     def save(self, **kwargs):
         if not self.pk:
-            self.time_stamp = datetime.datetime.now()
+            self.time_stamp = timezone.now()
 
         super(OrderPaymentBase, self).save(**kwargs)
 
@@ -1348,23 +1397,6 @@ class OrderPendingPayment(OrderPaymentBase):
 
 class OrderPaymentFailure(OrderPaymentBase):
     order = models.ForeignKey(Order, null=True, blank=True, related_name='paymentfailures')
-
-class OrderVariable(models.Model):
-    order = models.ForeignKey(Order, related_name="variables")
-    key = models.SlugField(_('key'), )
-    value = models.CharField(_('value'), max_length=100)
-
-    class Meta:
-        ordering=('key',)
-        verbose_name = _("Order variable")
-        verbose_name_plural = _("Order variables")
-
-    def __unicode__(self):
-        if len(self.value)>10:
-            v = self.value[:10] + '...'
-        else:
-            v = self.value
-        return u"OrderVariable: %s=%s" % (self.key, v)
 
 class OrderTaxDetail(models.Model):
     """A tax line item"""

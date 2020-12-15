@@ -1,9 +1,8 @@
 from django.http import HttpResponseRedirect
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from django.utils.translation import ugettext
 from django.views.decorators.cache import never_cache
-from livesettings import config_get_group
+from livesettings.functions import config_get_group
 from payment.utils import pay_ship_save, get_processor_by_key
 from satchmo_store.shop.models import Cart
 from satchmo_store.shop.models import Order, Contact, OrderPayment
@@ -26,8 +25,7 @@ def one_step(request):
     tempCart = Cart.objects.from_request(request)
     if tempCart.numItems == 0:
         template = lookup_template(payment_module, 'shop/checkout/empty_cart.html')
-        return render_to_response(template,
-                                  context_instance=RequestContext(request))
+        return render(request, template)
 
     # Create a new order
     newOrder = Order(contact=contact)

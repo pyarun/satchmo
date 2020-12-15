@@ -2,7 +2,7 @@
 
 from django import http
 from forms import PurchaseorderPayShipForm
-from livesettings import config_get_group
+from livesettings.functions import config_get_group
 from payment.views import confirm, payship
 from satchmo_utils.dynamic import lookup_url
 import logging
@@ -24,7 +24,7 @@ def confirm_info(request):
         settings, 
         template='shop/checkout/purchaseorder/confirm.html')
 
-def purchaseorder_process_form(request, contact, working_cart, payment_module):
+def purchaseorder_process_form(request, contact, working_cart, payment_module, allow_skip):
     log.debug('purchaseorder_process_form')
     if request.method == "POST":
         log.debug('handling POST')

@@ -5,6 +5,7 @@ except ImportError:
 
 from django import forms
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.sites.models import Site
 from django.core import serializers, urlresolvers
 from django.core.management.base import CommandError
@@ -12,7 +13,7 @@ from django.core.management.color import no_style
 from django.db import transaction
 from django.http import HttpResponse
 from django.utils.translation import ugettext as _
-from livesettings import config_value
+from livesettings.functions import config_value
 from product.models import Product, Price, Option
 from satchmo_utils.unique_id import slugify
 import logging
@@ -23,7 +24,7 @@ import zipfile
 log = logging.getLogger('product.forms')
 
 def export_choices():
-    fmts = serializers.get_serializer_formats()
+    fmts = serializers.get_public_serializer_formats()
     return zip(fmts,fmts)
 
 class InventoryForm(forms.Form):
@@ -87,7 +88,7 @@ class InventoryForm(forms.Form):
 
             if opt=='qty':
                 if value != prod.items_in_stock:
-                    request.user.message_set.create(message='Updated %s stock to %s' % (key, value))
+                    messages.add_message(request, messages.INFO, 'Updated %s stock to %s' % (key, value))
                     log.debug('Saving new qty=%d for %s' % (value, key))
                     prod.items_in_stock = value
                     prod.save()
@@ -99,7 +100,7 @@ class InventoryForm(forms.Form):
                     full_price = prod.unit_price
 
                 if value != full_price:
-                    request.user.message_set.create(message='Updated %s unit price to %s' % (key, value))
+                    messages.add_message(request, messages.INFO, 'Updated %s unit price to %s' % (key, value))
                     log.debug('Saving new price %s for %s' % (value, key))
                     try:
                         price = Price.objects.get(product=prod, quantity='1')
@@ -114,7 +115,7 @@ class InventoryForm(forms.Form):
                         note = "Activated %s"
                     else:
                         note = "Deactivated %s"
-                    request.user.message_set.create(message=note % (key))
+                    messages.add_message(request, messages.INFO, note % (key))
 
                     prod.active = value
                     prod.save()
@@ -125,7 +126,7 @@ class InventoryForm(forms.Form):
                         note = "%s is now featured"
                     else:
                         note = "%s is no longer featured"
-                    request.user.message_set.create(message=note % (key))
+                    messages.add_message(request, messages.INFO, note % (key))
 
                     prod.featured = value
                     prod.save()
@@ -208,8 +209,10 @@ class ProductExportForm(forms.Form):
                     images.append(image.picture)
             if include_categories:
                 for category in product.category.all():
-                    if category not in categories:
-                        categories[category] = 1
+                    wcategory = category
+                    while wcategory and wcategory not in categories:
+                        categories[wcategory] = 1
+                        wcategory = wcategory.parent
 
         # Export all categories, translations.  Export images,translations if
         # desired.
@@ -228,7 +231,6 @@ class ProductExportForm(forms.Form):
             raise CommandError("Unable to serialize database: %s" % e)
 
         if include_images:
-            filedir = settings.MEDIA_ROOT
             buf = StringIO()
             zf = zipfile.ZipFile(buf, 'a', zipfile.ZIP_STORED)
 
@@ -248,19 +250,19 @@ class ProductExportForm(forms.Form):
             zinfo.external_attr = 2175008768L
 
             for image in images:
-                f = os.path.join(filedir, image)
+                f = image.path
                 if os.path.exists(f):
                     zf.write(f, str(image))
 
             zf.close()
 
             raw = buf.getvalue()
-            mimetype = "application/zip"
+            content_type = "application/zip"
             format = "zip"
         else:
-            mimetype = "text/" + format
+            content_type = "text/" + format
 
-        response = HttpResponse(mimetype=mimetype, content=raw)
+        response = HttpResponse(content_type=content_type, content=raw)
         response['Content-Disposition'] = 'attachment; filename="products-%s.%s"' % (time.strftime('%Y%m%d-%H%M'), format)
 
         return response
@@ -342,7 +344,7 @@ class ProductImportForm(forms.Form):
         else:
             raw = StringIO(str(raw))
 
-        if not format in serializers.get_serializer_formats():
+        if not format in serializers.get_public_serializer_formats():
             errors.append(_('Unknown file format: %s') % format)
 
         if not errors:
@@ -378,6 +380,8 @@ class ProductImportForm(forms.Form):
                 errors.append(_("Problem installing fixture '%(filename)s': %(error_msg)s\n") % {'filename': filename, 'error_msg': str(e)})
                 errors.append("Raw: %s" % raw)
                 transaction.rollback()
+                transaction.leave_transaction_management()
+            else:
                 transaction.leave_transaction_management()
 
         return results, errors
@@ -473,7 +477,7 @@ class VariationManagerForm(forms.Form):
                 self.fields[slugkey] = sf
                 self.slugdict[key] = slugkey
 
-    def _save(self, request):
+    def save(self, request):
         self.full_clean()
         data = self.cleaned_data
         optiondict = _get_optiondict()
@@ -494,8 +498,6 @@ class VariationManagerForm(forms.Form):
                 except KeyError:
                     pass
 
-    save = transaction.commit_on_success(_save)
-
     def _create_variation(self, opts, key, data, request):
         namekey = "name__" + key
         nameval = data[namekey]
@@ -510,15 +512,15 @@ class VariationManagerForm(forms.Form):
             sku=skuval,
             slug=slugval)
         log.info('Updated variation %s', v)
-        request.user.message_set.create(message='Created %s' % v)
+        messages.add_message(request, messages.INFO, 'Created %s' % v)
         return v
 
     def _delete_variation(self, opts, request):
         variation = self.product.configurableproduct.get_product_from_options(opts)
         if variation:
-            log.info("Deleting variation for [%s] %s", self.product.slug, opts)
-            request.user.message_set.create(message='Deleted %s' % variation)
             variation.delete()
+            log.info("Deleting variation for [%s] %s", self.product.slug, opts)
+            messages.add_message(request, messages.INFO, 'Deleted %s' % variation)
 
 def _get_optiondict():
     site = Site.objects.get_current()

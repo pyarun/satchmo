@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Q
 from l10n.models import AdminArea, Country
-from livesettings import config_value
+from livesettings.functions import config_value
 from models import TaxRate
 from product.models import TaxClass
 from satchmo_store.contact.models import Contact
@@ -151,7 +151,7 @@ class Processor(object):
 
         if subtotal:
             rate = None
-            if config_value('TAX','TAX_SHIPPING'):
+            if config_value('TAX','TAX_SHIPPING_AREA'):
                 try:
                     tc = TaxClass.objects.get(title=config_value('TAX', 'TAX_CLASS'))
                     rate = self.get_rate(taxclass=tc)

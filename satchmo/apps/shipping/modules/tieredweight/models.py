@@ -106,7 +106,7 @@ class Shipper(BaseShipper):
             log.debug("Tiered weight not valid for weight = %s" % (self._weight))
             return False
 
-        if self._zone and self._cost:
+        if self._zone is not None and self._cost is not None:
             return True
 
 
@@ -259,8 +259,8 @@ class ZoneTranslation(models.Model):
 
 class WeightTier(models.Model):
     zone = models.ForeignKey(Zone, verbose_name=_('zone'), related_name='tiers')
-    min_weight = models.DecimalField(_('min weight'), max_digits=10, decimal_places=2)
-    handling = models.DecimalField(_('handling ajustment'), max_digits=10, decimal_places=2,
+    min_weight = models.DecimalField(_('min weight'), max_digits=10, decimal_places=2, help_text=_("This tier will be used for weights up to this value. i.e.: this is the MAXIMUM weight this tier will be used for."))
+    handling = models.DecimalField(_('handling adjustment'), max_digits=10, decimal_places=2,
         null=True, blank=True)
     price = models.DecimalField(_('shipping price'), max_digits=10, decimal_places=2)
     expires = models.DateField(_('expires'), null=True, blank=True)

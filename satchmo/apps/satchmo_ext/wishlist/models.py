@@ -1,22 +1,22 @@
 from django.db import models
-try:
-    from django.utils import simplejson
-except ImportError:
-    import simplejson
+import json
 from django.utils.translation import ugettext_lazy as _
 from listeners import wishlist_cart_add_listener
 from satchmo_store import shop
 from satchmo_store.contact.models import Contact
 from product.models import Product
 from satchmo_store.shop.signals import cart_add_view
-from signals_ahoy.signals import collect_urls
+from satchmo_utils.signals import collect_urls
 import datetime
 
 class ProductWishManager(models.Manager):
     def create_if_new(self, product, contact, details):
-        encoded = simplejson.dumps(details)
+        if details:
+            encoded = json.dumps(details)
+            products = ProductWish.objects.filter(product=product, contact=contact, _details=encoded)
+        else:
+            products = ProductWish.objects.filter(product=product, contact=contact, _details__isnull=True)
 
-        products = ProductWish.objects.filter(product=product, contact=contact, _details=encoded)
         if products and len(products) > 0:
             wish = products[0]
             if len(products) > 1:
@@ -40,12 +40,12 @@ class ProductWish(models.Model):
     def set_details(self, raw):
         """Set the details from a raw list"""
         if raw:
-            self._details = simplejson.dumps(raw)
+            self._details = json.dumps(raw)
     
     def get_details(self):
         """Convert the pickled details into a list"""
         if self._details:
-            return simplejson.loads(self._details)
+            return json.loads(self._details)
         else:
             return []
 

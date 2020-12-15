@@ -1,11 +1,10 @@
 from django import http
 from django.contrib.sites.models import Site
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from django.utils.translation import ugettext_lazy as _
 from forms import GiftCertCodeForm, GiftCertPayShipForm
 from models import GiftCertificate, GIFTCODE_KEY
-from livesettings import config_get_group
+from livesettings.functions import config_get_group
 from satchmo_store.shop.models import Order
 from payment.utils import pay_ship_save, get_or_create_order
 from payment.views import confirm, payship
@@ -20,7 +19,7 @@ log = logging.getLogger("giftcertificate.views")
 gc = config_get_group('PAYMENT_GIFTCERTIFICATE')
 
     
-def giftcert_pay_ship_process_form(request, contact, working_cart, payment_module):
+def giftcert_pay_ship_process_form(request, contact, working_cart, payment_module, allow_skip):
     if request.method == "POST":
         new_data = request.POST.copy()
         form = GiftCertPayShipForm(request, payment_module, new_data)
@@ -70,32 +69,22 @@ def confirm_info(request, template="shop/checkout/giftcertificate/confirm.html")
     controller.confirm()
     return controller.response
 
-def check_balance(request):
-    if request.method == "GET":        
-        code = request.GET.get('code', '')
-        if code:
-            try:
-                gc = GiftCertificate.objects.get(code=code, 
-                    value=True, 
-                    site=Site.objects.get_current())
-                success = True
-                balance = gc.balance
-            except GiftCertificate.DoesNotExist:
-                success = False
-        else:
-            success = False
+def check_balance(request):    
+    code = request.GET.get('code', '')
+    if code:
+        try:
+            gc = GiftCertificate.objects.get(code=code, valid=True, site=Site.objects.get_current())
+        except GiftCertificate.DoesNotExist:
+            gc = None
         
-        ctx = RequestContext(request, {
+        ctx = {
             'code' : code,
-            'success' : success,
-            'balance' : balance,
             'giftcertificate' : gc
-        })
+        }
     else:
         form = GiftCertCodeForm()
-        ctx = RequestContext(request, {
+        ctx = {
             'code' : '',
             'form' : form
-        })
-    return render_to_response('giftcertificate/balance.html',
-                              context_instance=ctx)
+        }
+    return render(request, 'giftcertificate/balance.html', ctx)

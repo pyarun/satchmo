@@ -37,7 +37,7 @@ def replace_urlpattern(urlpatterns, replacement):
 
     parameters:
         urlpatterns: list
-        replacement: an `django.conf.urls.defaults.url` object.
+        replacement: an `django.conf.urls.url` object.
 
     example:
 
@@ -80,6 +80,9 @@ def replace_urlpatterns(urlpatterns, replacelist):
 
 def reverse_admin_url(model, action, args=None, kwargs=None):
     from django.core.urlresolvers import reverse
-    meta = model._meta
-    name = 'admin:%s_%s_%s' % (meta.app_label, meta.module_name, action)
+    try:
+        model_name = model._meta.module_name
+    except AttributeError:
+        model_name = model._meta.model_name
+    name = 'admin:%s_%s_%s' % (model._meta.app_label, model_name, action)
     return reverse(name, args=args, kwargs=kwargs)

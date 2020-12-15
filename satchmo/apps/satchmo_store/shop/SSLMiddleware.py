@@ -59,7 +59,8 @@ __copyright__ = "Copyright (C) 2007, Stephen Zabel"
 __author__ = "Stephen Zabel"
 
 from django.conf import settings
-from django.http import HttpResponseRedirect, get_host
+from django.http import HttpResponseRedirect
+from django.utils.encoding import iri_to_uri
 from satchmo_utils import request_is_secure
 
 HTTPS_PATHS = getattr(settings, "HTTPS_PATHS", [])
@@ -90,7 +91,7 @@ class SSLRedirect:
 Please structure your views so that redirects only occur during GETs.""")
 
         protocol = secure and "https" or "http"
-        host = "%s://%s" % (protocol, get_host(request))
+        host = "%s://%s" % (protocol, request.get_host())
         # In certain proxying situations, we need to strip out the 443 port
         # in order to prevent inifinite redirects
         if not secure:
@@ -98,6 +99,6 @@ Please structure your views so that redirects only occur during GETs.""")
         if secure and SSLPORT:
             host = "%s:%s" % (host, SSLPORT)
             
-        newurl = "%s%s" % (host, request.get_full_path())
+        newurl = "%s%s" % (host, iri_to_uri(request.get_full_path()))
 
         return HttpResponseRedirect(newurl)

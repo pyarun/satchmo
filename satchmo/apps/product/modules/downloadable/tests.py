@@ -1,3 +1,4 @@
+import django
 from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core import urlresolvers
@@ -6,8 +7,9 @@ from django.core.files.storage import default_storage
 from django.http import HttpResponse
 from django.test import TestCase
 from django.test.client import Client
+from django.utils import timezone
 from l10n.models import Country
-from livesettings import config_value
+from livesettings.functions import config_value
 from product.models import Product
 from product.modules.downloadable.models import DownloadLink, DownloadableProduct
 from satchmo_store.contact.models import AddressBook, Contact
@@ -17,7 +19,6 @@ from shipping.modules.flat.shipper import Shipper as flat
 from shipping.modules.per.shipper import Shipper as per
 from satchmo_store.shop import get_satchmo_setting
 
-import datetime
 from decimal import Decimal
 import keyedcache
 import os
@@ -30,11 +31,12 @@ if prefix == '/':
 
 class DownloadableShippingTest(TestCase):
 
-    fixtures = ['l10n-data.yaml','test_shop.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml','test_shop.yaml']
 
     def setUp(self):
         self.site = Site.objects.get_current()
-        self.product1 = Product.objects.create(slug='p1', name='p1', site=self.site)
+        self.product1 = Product.objects.create(slug='p1', name='p1')
+        self.product1.site.add(self.site)
         self.cart1 = Cart.objects.create(site=self.site)
         self.cartitem1 = self.cart1.add_item(self.product1, 3)
 
@@ -52,7 +54,7 @@ class DownloadableShippingTest(TestCase):
         self.assertEqual(per(self.cart1, None).cost(), Decimal("0.00"))
 
 class DownloadableProductTest(TestCase):
-    fixtures = ['l10n-data.yaml', 'products.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml', 'products.yaml']
 
     def setUp(self):
         self.site = Site.objects.get_current()
@@ -83,7 +85,7 @@ class DownloadableProductTest(TestCase):
         # setup a temporary source dir and source file, using the same file name
         # generated eariler.
         self.dir = mkdtemp()
-        self.file = open(os.path.join(self.dir, self.file_name), "w")
+        self.file = open(os.path.join(self.dir, self.file_name), "wb+")
 
         # a fake SHA
         self.key = "".join(["12abf" for i in range(8)])
@@ -117,7 +119,7 @@ class DownloadableProductTest(TestCase):
         self.product_link, _created = DownloadLink.objects.get_or_create(
             downloadable_product=self.product,
             order=o, key=self.key, num_attempts=0,
-            time_stamp=datetime.datetime.now()
+            time_stamp=timezone.now()
         )
 
         # setup client
@@ -134,9 +136,10 @@ class DownloadableProductTest(TestCase):
 
         # first, hit the url.
         response = self.client.get(self.pd_url)
-        self.assertEqual(response['Location'],
-            'http://%s%s' % (self.domain, pd_process_url)
-        )
+        if django.VERSION >= (1, 10):
+            self.assertEqual(response['Location'], pd_process_url)
+        else:
+            self.assertEqual(response['Location'], 'http://%s%s' % (self.domain, pd_process_url))
 
         # follow the redirect to "process" the key.
         response = self.client.get(response['Location'])

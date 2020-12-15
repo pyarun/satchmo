@@ -4,11 +4,11 @@
 
 from django.core import urlresolvers
 from django.http import HttpResponseRedirect
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from django.utils.translation import ugettext as _
+from django.contrib import messages
 from django.views.decorators.cache import never_cache
-from livesettings import config_value
+from livesettings.functions import config_value
 from satchmo_store.shop.models import Order, OrderStatus
 from payment.config import gateway_live
 from satchmo_utils.dynamic import lookup_url, lookup_template
@@ -39,7 +39,7 @@ class ConfirmController(object):
         self.order = None
         self.cart = None
         self.extra_context = extra_context
-                
+        self.no_stock_checkout = config_value('PRODUCT','NO_STOCK_CHECKOUT')        
         #to override the form_handler, set this
         #otherwise it will use the built-in `_onForm`
         self.onForm = self._onForm
@@ -120,17 +120,16 @@ class ConfirmController(object):
         template = controller.lookup_template('CONFIRM')
         controller.order.recalculate_total()
         
-        base_env = {
+        context = {
             'PAYMENT_LIVE' : gateway_live(controller.paymentModule),
             'default_view_tax' : controller.viewTax,
             'order': controller.order,
             'errors': controller.processorMessage,
             'checkout_step2': controller.lookup_url('satchmo_checkout-step2')}
         if controller.extra_context:
-            base_env.update(controller.extra_context)
+            context.update(controller.extra_context)
             
-        context = RequestContext(self.request, base_env)
-        return render_to_response(template, context_instance=context)
+        return render(self.request, template, context)
 
     def _onSuccess(self, controller):
         """Handles a success in payment.  If the order is paid-off, sends success, else return page to pay remaining."""
@@ -195,23 +194,42 @@ class ConfirmController(object):
             self.cart = Cart.objects.from_request(self.request)
             if self.cart.numItems == 0 and not self.order.is_partially_paid:
                 template = self.lookup_template('EMPTY_CART')
-                self.invalidate(render_to_response(template,
-                                                   context_instance=RequestContext(self.request)))
+                self.invalidate(render(self.request, template))
                 return False
                 
         except Cart.DoesNotExist:
             template = self.lookup_template('EMPTY_CART')
-            self.invalidate(render_to_response(template,
-                                               context_instance=RequestContext(self.request)))
+            self.invalidate(render(self.request, template))
             return False
 
         # Check if the order is still valid
         if not self.order.validate(self.request):
-            context = RequestContext(self.request, 
-                {'message': _('Your order is no longer valid.')})
-            self.invalidate(render_to_response(self.templates['404'],
-                                               context_instance=context))
-
+            context = {'message': _('Your order is no longer valid.')}
+            self.invalidate(render(self.request, self.templates['404'], context))
+        #Do a check to make sure we don't have products that are no longer valid
+        #or have sold out since the user started the process
+        not_enough_qty = False
+        invalid_prod = False
+        error_products = []
+        for cartitem in self.cart:
+            stock = cartitem.product.items_in_stock
+            if not self.no_stock_checkout:      # If we want to enforce inventory, check again
+                if stock < cartitem.quantity:
+                    not_enough_qty = True
+                    error_products.append(cartitem.product.name)
+            if not cartitem.product.active:
+                invalid_prod = True
+                error_products.append(cartitem.product.name)
+        if not_enough_qty or invalid_prod:
+            prod_list = ",".join(error_products)
+            if not_enough_qty:
+                error_message = _('There are not enough %(prod)s in stock to complete your order. Please modify your order.') % {'prod':prod_list}
+            else:
+                error_message = _('The following products %(prod)s are no longer available. Please modify your order.') % {'prod':prod_list}
+            messages.error(self.request, error_message)
+            url = urlresolvers.reverse('satchmo_cart')
+            self.invalidate(HttpResponseRedirect(url))
+            return False
         self.valid = True
         signals.confirm_sanity_check.send(self, controller=self)
         return True
@@ -251,6 +269,9 @@ class FreeProcessorModule(object):
 
     def process(self, *args, **kwargs):
         if self.order.paid_in_full:
+            # marc order as succed to emit signals, if not present, 
+            # orders with balance 0 not correctly notified
+            self.order.order_success()
             return ProcessorResult('FREE', True, _('Success'))
         else:
             return ProcessorResult('FREE', False, _('This order does not have a zero balance'))

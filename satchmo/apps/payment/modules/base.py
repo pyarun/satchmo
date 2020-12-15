@@ -1,6 +1,6 @@
-from datetime import datetime
 from decimal import Decimal
 from django.utils.translation import ugettext_lazy as _
+from django.utils import timezone
 from satchmo_store.shop.models import OrderAuthorization, OrderPayment, OrderPaymentFailure, OrderPendingPayment, OrderStatus
 import logging
 
@@ -206,7 +206,8 @@ class PaymentRecorder(object):
 
     def _get_amount(self):
         if self._amount is None:
-            return self.order.balance
+            balance = self.order.balance
+            return balance if balance > 0 else Decimal("0")
         else:
             return self._amount
 
@@ -305,7 +306,7 @@ class PaymentRecorder(object):
         self.orderpayment.transaction_id=self.transaction_id
         self.orderpayment.amount=self.amount
 
-        self.orderpayment.time_stamp = datetime.now()
+        self.orderpayment.time_stamp = timezone.now()
         self.orderpayment.save()
 
         order = self.orderpayment.order

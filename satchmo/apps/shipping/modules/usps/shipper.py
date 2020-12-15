@@ -18,7 +18,7 @@ from django.core.cache import cache
 from django.template import Context, loader
 from django.utils.translation import ugettext as _
 from l10n.models import Country
-from livesettings import config_get_group, config_value
+from livesettings.functions import config_get_group, config_value
 from shipping.modules.base import BaseShipper
 import logging
 import urllib2
@@ -174,7 +174,7 @@ class Shipper(BaseShipper):
             if self.is_intl:
                 api = 'IntlRate'
             else:
-                api = 'RateV3'
+                api = 'RateV4'
 
         data = 'API=%s&XML=%s' % (api, request.encode('utf-8'))
 
@@ -262,7 +262,11 @@ class Shipper(BaseShipper):
         if settings.LIVE.value:
             connection = settings.CONNECTION.value
         else:
-            connection = settings.CONNECTION_TEST.value
+            # The USPS testing server does not support RateV3 or RateV4, and a
+            # successful query against that server is no longer (as of May 5,
+            # 2014) required for access to the production USPS server
+            #connection = settings.CONNECTION_TEST.value
+            connection = settings.CONNECTION.value
 
         cache_key_response = "usps-cart-%s-response" % int(cart.id)
         cache_key_request = "usps-cart-%s-request" % int(cart.id)
@@ -284,7 +288,7 @@ class Shipper(BaseShipper):
         # if USPS returned no error, return the prices
         if errors == None or len(errors) == 0:
             # check for domestic results first
-            all_packages = tree.getiterator('RateV3Response')
+            all_packages = tree.getiterator('RateV4Response')
 
             # if there are none, revert to international results
             if len(all_packages) == 0:
@@ -295,8 +299,8 @@ class Shipper(BaseShipper):
                         if service.attrib['ID'] == self.service_type_code and \
                             self.service_type_text.startswith('Int`l: '):
                             
-                            self.charges = service.find('.//Postage/').text
-                            self.delivery_days = service.find('.//SvcCommitments/').text
+                            self.charges = service.find('.//Postage').text
+                            self.delivery_days = service.find('.//SvcCommitments').text
                             #self.verbose_log('%s %s' % (self.charges, self.delivery_days))
                             self.is_valid = True
                             self._calculated = True
@@ -309,7 +313,7 @@ class Shipper(BaseShipper):
                     for postage in package.getiterator('Postage'):
                         if postage.attrib['CLASSID'] == self.service_type_code and \
                             not self.service_type_text.startswith('Int`l: '):
-                            self.charges = postage.find('.//Rate/').text
+                            self.charges = postage.find('.//Rate').text
 
                             # Now try to figure out how long it would take for this delivery
                             if self.api:
@@ -323,10 +327,10 @@ class Shipper(BaseShipper):
 
                                     # express mail usually has a date commitment
                                     if self.api == 'ExpressMailCommitment':
-                                        key = './/Date/'
+                                        key = './/Date'
                                         self.exact_date = True
                                     else:
-                                        key = './/Days/'
+                                        key = './/Days'
                                     if i.find(key) != None:
                                         self.delivery_days = i.find(key).text
 

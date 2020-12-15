@@ -1,9 +1,11 @@
 from decimal import Decimal
+from django.conf import settings
 from django.contrib.sites.models import Site
 from django.core import urlresolvers
-from django.forms.util import ValidationError
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.test import TestCase
+from django.utils import timezone
 from product.forms import ProductExportForm
 from product.models import (
     Category,
@@ -26,10 +28,12 @@ class OptionGroupTest(TestCase):
 
     def setUp(self):
         self.site=Site.objects.get_current()
-        sizes = OptionGroup.objects.create(name="sizes", sort_order=1, site=self.site)
+        sizes = OptionGroup.objects.create(name="sizes", sort_order=1)
+        sizes.site.add(self.site)
         option_small = Option.objects.create(option_group=sizes, name="Small", value="small", sort_order=1)
         option_large = Option.objects.create(option_group=sizes, name="Large", value="large", sort_order=2, price_change=1)
-        colors = OptionGroup.objects.create(name="colors", sort_order=2, site=self.site)
+        colors = OptionGroup.objects.create(name="colors", sort_order=2)
+        colors.site.add(self.site)
         option_black = Option.objects.create(option_group=colors, name="Black", value="black", sort_order=1)
         option_white = Option.objects.create(option_group=colors, name="White", value="white", sort_order=2, price_change=3)
 
@@ -71,11 +75,13 @@ class CategoryTest(TestCase):
 
         # setup simple categories
         self.pet_jewelry, _created = Category.objects.get_or_create(
-            slug="pet-jewelry", name="Pet Jewelry", parent=None, site=self.site
+            slug="pet-jewelry", name="Pet Jewelry", parent=None
         )
+        self.pet_jewelry.site.add(self.site)
         self.womens_jewelry, _created = Category.objects.get_or_create(
-            slug="womens-jewelry", name="Women's Jewelry", parent=None, site=self.site
+            slug="womens-jewelry", name="Women's Jewelry", parent=None
         )
+        self.womens_jewelry.site.add(self.site)
 
     def tearDown(self):
         keyedcache.cache_delete()
@@ -134,10 +140,14 @@ class DiscountTest(TestCase):
         start = datetime.date(2006, 10, 1)
         end = datetime.date(5000, 10, 1)
         self.discount = Discount.objects.create(description="New Sale", code="BUYME", amount="5.00", allowedUses=10,
-            numUses=0, minOrder=5, active=True, startDate=start, endDate=end, shipping='NONE', site=self.site)
+            numUses=0, minOrder=5, active=True, startDate=start, endDate=end, shipping='NONE')
+        self.discount.site.add(self.site)
+        self.old_language_code = settings.LANGUAGE_CODE
+        settings.LANGUAGE_CODE = 'en-us'
 
     def tearDown(self):
         keyedcache.cache_delete()
+        settings.LANGUAGE_CODE = self.old_language_code
 
     def testValid(self):
 
@@ -180,6 +190,26 @@ class DiscountTest(TestCase):
 
 class CalcFunctionTest(TestCase):
 
+    def assert_apply_even_split(self, input_str, amount_str, expect_str):
+        """
+        Method which simplifies many similar tests to be written more compact on one line
+        Example: the following line does the same as the method ``testEvenSplit1``.
+        > > > self.assert_apply_even_split('10 10 10 10', '16', '4.00 4.00 4.00 4.00')
+        """
+        ddd = input_str.split()
+        dd = map(lambda x: Decimal(str(x)).quantize(Decimal("0.01")), ddd)
+        d = dict(enumerate(dd))
+        amount = Decimal(str(amount_str)).quantize(Decimal("0.01"))
+        s = Discount.apply_even_split(d, amount)
+        self.assertEqual(s.keys(), d.keys())
+        output_str = ' '.join(map(lambda (k, v): str(v), sorted(s.items())))
+        self.assertEqual(output_str, expect_str)
+
+    def testEvenSplit1Duplicate(self):
+        """Does the same as the following test, but written more compact on one line""";
+        self.assert_apply_even_split('10 10 10 10', '16', '4.00 4.00 4.00 4.00')
+
+        
     def testEvenSplit1(self):
         """Simple split test"""
         d = {
@@ -274,7 +304,7 @@ class CalcFunctionTest(TestCase):
         }
 
         s = Discount.apply_even_split(d, Decimal("10.00"))
-        self.assertEqual(s[1], Decimal("3.51"))
+        self.assertEqual(s[1], Decimal("3.50"))
         self.assertEqual(s[2], Decimal("3.50"))
         self.assertEqual(s[3], Decimal("3.00"))
 
@@ -290,6 +320,60 @@ class CalcFunctionTest(TestCase):
         self.assertEqual(s[1], Decimal("1.00"))
         self.assertEqual(s[2], Decimal("1.00"))
         self.assertEqual(s[3], Decimal("1.00"))
+
+
+    def testEvenSplitUncommonNear(self):
+        """Simple split test"""
+        self.assert_apply_even_split('6.67 6.67 6.67', '20.00', '6.67 6.67 6.66')
+
+
+    def testEvenSplitUncommon1(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 1.99', '20.00', '6.11 5.80 6.10 1.99')
+
+    def testEvenSplitUncommon2(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 2.99', '20.00', '5.67 5.67 5.67 2.99')
+    
+    def testEvenSplitUncommon3(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 1.98', '20.00', '6.11 5.80 6.11 1.98')
+    
+    def testEvenSplitUncommon4(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 0.98', '20.00', '6.61 5.80 6.61 0.98')
+    
+    def testEvenSplitUncommon5(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 0.98', '10.00', '3.01 3.01 3.00 0.98')
+    
+    def testEvenSplitUncommon6(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 3.99', '30.00', '10.11 5.80 10.10 3.99')
+    
+    def testEvenSplitUncommon7(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 5.80 25.80 3.99', '40.00', '12.90 5.80 17.31 3.99')
+    
+    def testEvenSplitUncommon8(self):
+        """Simple split test"""
+        self.assert_apply_even_split('12.90 35.80 25.80 3.99', '40.00', '12.01 12.00 12.00 3.99')
+    
+    def testEvenSplitUncommon9(self):
+        """Simple split test"""
+        self.assert_apply_even_split('8.00 15.80 25.80 3.99', '40.00', '8.00 14.01 14.00 3.99')
+    
+    def testEvenSplitUncommon10(self):
+        """Simple split test"""
+        self.assert_apply_even_split('8.00 15.80 25.80 13.99', '40.00', '8.00 10.67 10.67 10.66')
+    
+    def testEvenSplitUncommon11(self):
+        """Simple split test"""
+        self.assert_apply_even_split('8.00 15.80 25.80 14.00', '40.00', '8.00 10.67 10.67 10.66')
+    
+    def testEvenSplitUncommon12(self):
+        """Simple split test"""
+        self.assert_apply_even_split('5.80 25.80 12.90', '20.00', '5.80 7.10 7.10')
 
 
 class ProductExportTest(TestCase):
@@ -334,11 +418,6 @@ class ProductExportTest(TestCase):
         self.assertTrue(response.has_header('Content-Type'))
         self.assertEqual('text/xml', response['Content-Type'])
 
-        form_data['format'] = 'python'
-        response = self.client.post(url, form_data)
-        self.assertTrue(response.has_header('Content-Type'))
-        self.assertEqual('text/python', response['Content-Type'])
-
     def test_zip_export_content_type(self):
         """
         Test the content type of an exported zip file.
@@ -363,7 +442,7 @@ class ProductExportTest(TestCase):
 
 class ProductTest(TestCase):
     """Test Product functions"""
-    fixtures = ['l10n-data.yaml','sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
+    fixtures = ['initial_data.yaml', 'l10n-data.yaml','sample-store-data.yaml', 'products.yaml', 'test-config.yaml']
 
     def tearDown(self):
         keyedcache.cache_delete()
@@ -390,7 +469,7 @@ class ProductTest(TestCase):
         product = Product.objects.get(slug='PY-Rocks')
         self.assertEqual(product.unit_price, Decimal("19.50"))
 
-        today = datetime.datetime.now()
+        today = timezone.now()
         aweek = datetime.timedelta(days=7)
         lastwk = today - aweek
         nextwk = today + aweek

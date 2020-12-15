@@ -71,8 +71,8 @@ class PaymentProcessor(BasePaymentProcessor):
 
     def prepare_content(self, order, amount):
         self.bill_to = {
-            'firstName' : order.contact.first_name,
-            'lastName' : order.contact.last_name,
+            'firstName' : order.bill_first_name,
+            'lastName' : order.bill_last_name,
             'street1': order.full_bill_street,
             'city': order.bill_city,
             'state' : order.bill_state,
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     """
 
     import os
-    from livesettings import config_get_group
+    from livesettings.functions import config_get_group
 
     # Set up some dummy classes to mimic classes being passed through Satchmo
     class testContact(object):

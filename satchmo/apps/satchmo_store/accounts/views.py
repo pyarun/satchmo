@@ -1,15 +1,16 @@
 from django.conf import settings
 from django.contrib.auth import login, REDIRECT_FIELD_NAME
-from django.contrib.sites.models import Site, RequestSite
+from django.contrib.sites.models import Site
+from django.contrib.sites.requests import RequestSite
 from django.core import urlresolvers
 from django.http import HttpResponseRedirect, QueryDict
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render
 from django.utils.translation import ugettext_lazy as _
 from django.views.decorators.cache import never_cache
+from django.views.generic.base import TemplateView
 from forms import RegistrationAddressForm, RegistrationForm, EmailAuthenticationForm
 from l10n.models import Country
-from livesettings import config_get_group, config_value
+from livesettings.functions import config_get_group, config_value
 from satchmo_store.accounts.mail import send_welcome_email
 from satchmo_store.accounts import signals
 from satchmo_store.contact import CUSTOMER_ID
@@ -29,8 +30,10 @@ def emaillogin(request, template_name='registration/login.html',
     auth_form=EmailAuthenticationForm, redirect_field_name=REDIRECT_FIELD_NAME):
     "Displays the login form and handles the login action. Altered to use the EmailAuthenticationForm"
 
-    redirect_to = request.REQUEST.get(redirect_field_name, '')
-
+    if request.POST:
+        redirect_to = request.POST.get(redirect_field_name, '')
+    else:
+        redirect_to = request.GET.get(redirect_field_name, '')
     # Avoid redirecting to logout if the user clicked on login after logout
     if redirect_to == urlresolvers.reverse('auth_logout'):
         redirect_to = None
@@ -49,11 +52,11 @@ def emaillogin(request, template_name='registration/login.html',
     else:
         current_site = RequestSite(request)
 
-    return render_to_response(template_name, {
+    return render(request, template_name, {
         'form': form,
         redirect_field_name: redirect_to,
         'site_name': current_site.name,
-    }, context_instance=RequestContext(request))
+    })
 emaillogin = never_cache(emaillogin)
 
 def _login(request, redirect_to, auth_form=EmailAuthenticationForm):
@@ -99,22 +102,29 @@ def _assign_cart(request):
             log.debug("The user has no cart in the current session.")
     except:
         log.debug("Unable to assign cart user during login")
-    
+
 def _get_prev_cart(request):
     try:
         contact = Contact.objects.from_request(request)
+        if not contact:
+            return None
         saved_cart = contact.cart_set.latest('date_time_created')
         # If the latest cart has len == 0, cart is unusable.
-        if len(saved_cart) and 'cart' in request.session:
-            existing_cart = Cart.objects.from_request(request, create=False)
-            if ( (len(existing_cart) == 0) or config_value('SHOP','PERSISTENT_CART_MERGE') ):
-                # Merge the two carts together
-                saved_cart.merge_carts(existing_cart)
-                request.session['cart'] = saved_cart.id
-    except Exception, e:
-        pass
+        if saved_cart and len(saved_cart):
+            if 'cart' in request.session:
+                existing_cart = Cart.objects.from_request(request, create=False)
+                if existing_cart.pk != saved_cart.pk and ( (len(existing_cart) == 0) or config_value('SHOP','PERSISTENT_CART_MERGE') ):
+                    # Merge the two carts together
+                    saved_cart.merge_carts(existing_cart)
 
-def register_handle_address_form(request, redirect=None):
+            request.session['cart'] = saved_cart.id
+            log.debug('retrieved cart: %s', saved_cart)
+            return saved_cart
+
+    except Exception:
+        return None
+
+def register_handle_address_form(request, redirect=None, action_required=''):
     """
     Handle all registration logic.  This is broken out from "register" to allow easy overriding/hooks
     such as a combined login/register page.
@@ -133,16 +143,18 @@ def register_handle_address_form(request, redirect=None):
     except Contact.DoesNotExist:
         contact = None
 
-    if request.method == 'POST':
+    if request.method == 'POST' and request.POST.get('action', '') == action_required:
 
         form = RegistrationAddressForm(request.POST, shop=shop, contact=contact)
 
         if form.is_valid():
-            contact = form.save(request)
+            contact = form.save(request, force_new=True)
 
             if not redirect:
                 redirect = urlresolvers.reverse('registration_complete')
             return (True, HttpResponseRedirect(redirect))
+        else:
+            log.debug("createform errors: %s", form.errors)
 
     else:
         initial_data = {}
@@ -185,7 +197,7 @@ def register_handle_form(request, redirect=None):
     if request.method == 'POST':
         form = RegistrationForm(request.POST)
         if form.is_valid():
-            contact = form.save(request)
+            contact = form.save(request, force_new=True)
 
             # look for explicit "next"
             next = request.POST.get('next', '')
@@ -234,23 +246,30 @@ def activate(request, activation_key):
         # ...but we cannot authenticate without password... so we work-around authentication
         account.backend = settings.AUTHENTICATION_BACKENDS[0]
         _login(request, account)
-        contact = Contact.objects.get(user=account)
-        request.session[CUSTOMER_ID] = contact.id
-        send_welcome_email(contact.email, contact.first_name, contact.last_name)
-        signals.satchmo_registration_verified.send(contact, contact=contact)
+        try:
+            contact = Contact.objects.get(user=account)
+            request.session[CUSTOMER_ID] = contact.id
+            send_welcome_email(contact.email, contact.first_name, contact.last_name)
+            signals.satchmo_registration_verified.send(contact, contact=contact)
+        except Contact.DoesNotExist:
+            # Treated for better compatibility with registation tests without error
+            pass
 
-    context = RequestContext(request, {
+    context = {
         'account': account,
         'expiration_days': config_value('SHOP', 'ACCOUNT_ACTIVATION_DAYS'),
-    })
-    return render_to_response('registration/activate.html',
-                              context_instance=context)
+    }
+    return render(request, 'registration/activate.html', context)
 
 
-def login_signup(request, template_name="contact/login_signup.html", registration_handler=register_handle_form):
+def login_signup(request,
+                 template_name="contact/login_signup.html",
+                 registration_handler=register_handle_form,
+                 handler_kwargs = {}):
     """Display/handle a combined login and create account form"""
 
     redirect_to = request.REQUEST.get(REDIRECT_FIELD_NAME, '')
+    handler_kwargs['redirect'] = redirect_to
 
     loginform = None
     createform = None
@@ -260,7 +279,7 @@ def login_signup(request, template_name="contact/login_signup.html", registratio
         action = request.POST.get('action', 'login')
         if action == 'create':
             #log.debug('Signup form')
-            ret = registration_handler(request, redirect=redirect_to)
+            ret = registration_handler(request, **handler_kwargs)
             success = ret[0]
             todo = ret[1]
             if len(ret) > 2:
@@ -271,12 +290,7 @@ def login_signup(request, template_name="contact/login_signup.html", registratio
                 if redirect_to:
                     return HttpResponseRedirect(redirect_to)
                 else:
-                    ctx = RequestContext(request, {
-                        REDIRECT_FIELD_NAME: redirect_to,
-                    })
-
-                    return render_to_response('registration/registration_complete.html',
-                                              context_instance=ctx)
+                    return render(request, 'registration/registration_complete.html', { REDIRECT_FIELD_NAME: redirect_to })
             else:
                 createform = todo
 
@@ -297,7 +311,7 @@ def login_signup(request, template_name="contact/login_signup.html", registratio
     if not loginform:
         success, loginform = _login(request, redirect_to)
     if not createform:
-        ret = registration_handler(request, redirect_to)
+        ret = registration_handler(request, **handler_kwargs)
         success = ret[0]
         createform = ret[1]
         if len(ret) > 2:
@@ -322,16 +336,17 @@ def login_signup(request, template_name="contact/login_signup.html", registratio
     if extra_context:
         ctx.update(extra_context)
 
-    context = RequestContext(request, ctx)
-
-    return render_to_response(template_name, context_instance=context)
+    return render(request, template_name, ctx)
 
 
 def login_signup_address(request, template_name="contact/login_signup_address.html"):
     """
     View which allows a user to login or else fill out a full address form.
     """
-    return login_signup(request, template_name=template_name, registration_handler=register_handle_address_form)
+    return login_signup(request,
+                        template_name=template_name,
+                        registration_handler=register_handle_address_form,
+                        handler_kwargs={'action_required' : 'create'})
 
 
 def register(request, redirect=None, template='registration/registration_form.html'):
@@ -358,12 +373,21 @@ def register(request, redirect=None, template='registration/registration_form.ht
         ctx = {
             'form': todo,
             'title' : _('Registration Form'),
-            'show_newsletter' : show_newsletter
+            'show_newsletter' : show_newsletter,
+            'allow_nickname' : config_value('SHOP', 'ALLOW_NICKNAME_USERNAME')
         }
 
         if extra_context:
             ctx.update(extra_context)
 
-        context = RequestContext(request, ctx)
-        return render_to_response(template, context_instance=context)
+        return render(request, template, ctx)
+
+
+class RegistrationComplete(TemplateView):
+
+    def get_context_data(self, **kwargs):
+        context = super(RegistrationComplete, self).get_context_data(**kwargs)
+        verify = (config_value('SHOP', 'ACCOUNT_VERIFICATION') == 'EMAIL')
+        context.update(verify=verify)
+        return context
 

@@ -1,14 +1,16 @@
 from django.conf import settings
 from django.core import urlresolvers
 from django.http import HttpResponseRedirect, HttpResponse
-from django.shortcuts import render_to_response
-from django.template import RequestContext
+from django.shortcuts import render_to_response, render
 from django.utils.datastructures import MultiValueDictKeyError
 from django.utils.safestring import mark_safe
 try:
     from django.utils.simplejson.encoder import JSONEncoder
 except ImportError:
-    from simplejson.encoder import JSONEncoder
+    try:
+        from simplejson.encoder import JSONEncoder        
+    except ImportError:
+        from json import JSONEncoder
 from django.utils.translation import ugettext as _
 from satchmo_store.contact.models import Contact
 from satchmo_store.shop.signals import order_success
@@ -32,12 +34,12 @@ def wishlist_view(request, message=""):
         
     wishes = ProductWish.objects.filter(contact=contact)
 
-    ctx = RequestContext(request, {
+    ctx = {
         'wishlist' : wishes,
         'wishlist_message' : message,
-    })
+    }
 
-    return render_to_response('wishlist/index.html', context_instance=ctx)
+    return render(request, 'wishlist/index.html', ctx)
 
 def wishlist_add(request):
     """Add an item to the wishlist."""
@@ -192,8 +194,6 @@ order_success.connect(_remove_wishes_on_order, sender=Order)
 
 def _wishlist_requires_login(request):
     log.debug("wishlist requires login")
-    ctx = RequestContext(request, {
+    return render(request, 'wishlist/login_required.html', {
         'login_url' : settings.LOGIN_URL
-        })
-    return render_to_response('wishlist/login_required.html',
-                              context_instance=ctx)
+    })

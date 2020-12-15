@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from keyedcache import cache_delete
-from livesettings import config_get
+from livesettings.functions import config_get
 from satchmo_store.shop.tests import make_test_order, make_order_payment
 import logging
 log = logging.getLogger('tax.test')
@@ -13,7 +13,7 @@ def _set_percent_taxer(percent):
     tax.update('tax.modules.percent')
     pcnt = config_get('TAX', 'PERCENT')
     pcnt.update(percent)
-    shp = config_get('TAX', 'TAX_SHIPPING')
+    shp = config_get('TAX', 'TAX_SHIPPING_PERCENT')
     shp.update(False)
 
     return shp

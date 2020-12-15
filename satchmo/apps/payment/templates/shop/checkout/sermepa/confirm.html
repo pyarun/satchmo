@@ -3,7 +3,7 @@
 {% load satchmo_product %}
 {% load satchmo_util %}
 
-{% block payment_step %}<a href="{% url SERMEPA_satchmo_checkout-step2 %}">{% trans "Payment" %}</a>{% endblock %}
+{% block payment_step %}<a href="{% url 'SERMEPA_satchmo_checkout-step2' %}">{% trans "Payment" %}</a>{% endblock %}
 
 {% block payment_display %}
 <h4>{% trans "Payment" %}</h4>
@@ -13,7 +13,7 @@
 
 {% block payment_form %}
 {% if order.paid_in_full %}
-<form action="{% url SERMEPA_satchmo_checkout_free-confirm %}">
+<form action="{% url 'SERMEPA_satchmo_checkout_free-confirm' %}">
     <input type="submit" value="{% trans "Purchase Items" %}" />
 </form>
 {% else %}
@@ -29,9 +29,9 @@
 <input type="hidden" name="Ds_Merchant_ConsumerLanguage" value="2" />	{# English #}
 
 {% if order.partially_paid %}
-	<input type="hidden" name="Ds_Merchant_ProductDescription" value="Remaining Balance for order {{order.id}}" />
+	<input type="hidden" name="Ds_Merchant_ProductDescription" value="{% blocktrans with order.id as order_id %}Remaining Balance for order #{{ order_id }}{% endblocktrans %}" />
 {% else %}
-	<input type="hidden" name="Ds_Merchant_ProductDescription" value="Order {{order.id}}" />
+	<input type="hidden" name="Ds_Merchant_ProductDescription" value="{% blocktrans with order.id as order_id %}Order #{{ order_id }}{% endblocktrans %}" />
 {% endif %}
 
 <input type="hidden" name="Ds_Merchant_Amount" value="{{amount}}" />

@@ -1,5 +1,6 @@
 from django.utils.translation import ugettext_lazy, ugettext
-from livesettings import *
+from livesettings.values import StringValue,ConfigurationGroup,BooleanValue,DecimalValue,PositiveIntegerValue
+from livesettings.functions import config_register,config_register_list,config_get_group,config_choice_values,config_value
 from payment import signals, active_gateways
 from satchmo_utils import is_string_like
 import logging
@@ -114,8 +115,9 @@ def labelled_gateway_choices():
     for module, group in active_gateways():
         defaultlabel = module.split('.')[-1]
         label = _(config_value(group, 'LABEL', default = defaultlabel))
-        choices.append((group, label))
-
+        key = config_value(group,'KEY')
+        choices.append((key, label))
+        
     signals.payment_choices.send(None, choices=choices)
     return choices
 

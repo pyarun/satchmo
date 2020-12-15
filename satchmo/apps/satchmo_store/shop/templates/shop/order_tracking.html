@@ -4,7 +4,7 @@
 
 {% block navbar %}
    <li class="first"><a href="{{ shop_base }}/">{% trans "Home" %}</a></li>
-   <li><a href="{% url satchmo_account_info %}">{% trans "Account" %}</a></li>
+   <li><a href="{% url 'satchmo_account_info' %}">{% trans "Account" %}</a></li>
    <li>{% trans "Order Tracking" %}</li>
 {% endblock %}
 

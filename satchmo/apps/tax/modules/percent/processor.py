@@ -1,5 +1,5 @@
 from decimal import Decimal
-from livesettings import config_value
+from livesettings.functions import config_value
 
 class Processor(object):
     
@@ -34,7 +34,7 @@ class Processor(object):
         return Decimal(config_value('TAX','PERCENT'))
     
     def get_rate(self, *args, **kwargs):
-        return self.get_percent/100
+        return self.get_percent()/100
         
     def shipping(self, subtotal=None):
         if subtotal is None and self.order:
@@ -42,7 +42,7 @@ class Processor(object):
 
         if subtotal:
             subtotal = self.order.shipping_sub_total
-            if config_value('TAX','TAX_SHIPPING'):
+            if config_value('TAX','TAX_SHIPPING_PERCENT'):
                 percent = config_value('TAX','PERCENT')
                 t = subtotal * (percent/100)
             else:
@@ -70,7 +70,7 @@ class Processor(object):
         itemtax = sub_total * (percent/100)
         taxrates = {'%i%%' % percent :  itemtax}
         
-        if config_value('TAX','TAX_SHIPPING'):
+        if config_value('TAX','TAX_SHIPPING_PERCENT'):
             shipping = order.shipping_sub_total
             sub_total += shipping
             ship_tax = shipping * (percent/100)

@@ -1,12 +1,14 @@
 from decimal import Decimal
+
 from django import forms
 from django.template import loader
 from django.template import RequestContext
 from django.utils.translation import ugettext_lazy as _
+
 from l10n.utils import moneyfmt
-from livesettings import config_value, config_value_safe
+from livesettings.functions import config_value, config_value_safe
 from payment import signals
-from payment.config import labelled_gateway_choices
+from payment.config import labelled_gateway_choices, credit_choices
 from payment.models import CreditCardDetail
 from payment.utils import get_or_create_order
 from product.models import Discount, TaxClass, Price
@@ -21,7 +23,7 @@ from satchmo_utils.views import CreditCard
 from shipping.config import shipping_methods, shipping_method_by_key
 from shipping.signals import shipping_choices_query
 from shipping.utils import update_shipping
-from signals_ahoy.signals import form_init, form_initialdata, form_presave, form_postsave, form_validate
+from satchmo_utils.signals import form_init, form_initialdata, form_presave, form_postsave, form_validate
 from tax.templatetags.satchmo_tax import _get_taxprocessor
 from threaded_multihost import threadlocals
 import calendar
@@ -82,7 +84,7 @@ def _get_shipping_choices(request, paymentmodule, cart, contact, default_view_ta
 
     for method in methods:
         method.calculate(cart, contact)
-        if method.valid():
+        if method.valid(order=order):
             template = lookup_template(paymentmodule, 'shipping/options.html')
             t = loader.get_template(template)
             shipcost = finalcost = method.cost()
@@ -154,20 +156,21 @@ class CustomChargeForm(forms.Form):
     orderitem = forms.IntegerField(required=True, widget=forms.HiddenInput())
     amount = forms.DecimalField(label=_('New price'), required=False)
     shipping = forms.DecimalField(label=_('Shipping adjustment'), required=False)
-    notes = forms.CharField(_("Notes"), required=False, initial="Your custom item is ready.")
+    notes = forms.CharField(label=_('Notes'), required=False, initial="Your custom item is ready.")
 
     def __init__(self, *args, **kwargs):
         initial = kwargs.get('initial', {})
         form_initialdata.send('CustomChargeForm', form=self, initial=initial)
         kwargs['initial'] = initial
         super(CustomChargeForm, self).__init__(*args, **kwargs)
-        form_init.send(self.__class__, form=self)
+        form_init.send(CustomChargeForm, form=self)
 
     def clean(self, *args, **kwargs):
         super(CustomChargeForm, self).clean(*args, **kwargs)
-        form_validate.send(self.__class__, form=self)
+        form_validate.send(CustomChargeForm, form=self)
         return self.cleaned_data
 
+        
 class PaymentMethodForm(ProxyContactForm):
     paymentmethod = forms.ChoiceField(
             label=_('Payment method'),
@@ -190,10 +193,12 @@ class PaymentMethodForm(ProxyContactForm):
                 order=order,
                 contact=self._contact
                 )
+        if self.fields['paymentmethod'].initial == None:
+            self.fields['paymentmethod'].initial = payment_choices[0][0]
         if len(payment_choices) == 1:
-            self.fields['paymentmethod'].widget = forms.HiddenInput(attrs={'value' : payment_choices[0][0]})
+            self.fields['paymentmethod'].widget = forms.HiddenInput()
         else:
-            self.fields['paymentmethod'].widget = forms.RadioSelect(attrs={'value' : payment_choices[0][0]})
+            self.fields['paymentmethod'].widget = forms.RadioSelect()
         self.fields['paymentmethod'].choices = payment_choices
 
     def clean(self):
@@ -237,6 +242,9 @@ class PaymentContactInfoForm(PaymentMethodForm, ContactInfoForm):
             cart = kwargs.get('cart', None)
             if not cart:
                 cart = Cart.objects.from_request(request)
+            if not cart.customer:
+                cart.customer = contact
+                cart.save()
             self.order = get_or_create_order(request, cart, contact, self.cleaned_data)
             form_postsave.send(PaymentContactInfoForm, form=self)
             return contactid
@@ -327,7 +335,8 @@ class SimplePayShipForm(forms.Form):
         if order and order.discount_code:
             try:
                 discount = Discount.objects.by_code(order.discount_code)
-                if discount and discount.shipping == "FREECHEAP":
+                # 'discount' object could be NullDiscount instance
+                if discount and hasattr(discount, 'shipping') and discount.shipping == "FREECHEAP":
                     if cheapshipping:
                         shipping_choices = [opt for opt in shipping_choices if opt[0] == cheapshipping]
                         shipping_dict = {cheapshipping: shipping_dict[cheapshipping]}
@@ -338,7 +347,7 @@ class SimplePayShipForm(forms.Form):
         shiphide = config_value('SHIPPING','HIDING')
         # Handle a partial payment and make sure we don't show a shipping choice after one has
         # already been chosen
-        if self.order.is_partially_paid and shipping_dict.get(self.order.shipping_model, False):
+        if self.order and self.order.is_partially_paid and shipping_dict.get(self.order.shipping_model, False):
             self.fields['shipping'] = forms.CharField(max_length=30, initial=self.order.shipping_model,
                 widget=forms.HiddenInput(attrs={'value' : shipping_choices[0][0]}))
             self.shipping_hidden = True
@@ -471,14 +480,14 @@ class CreditPayShipForm(SimplePayShipForm):
                     cc.ccv = data['ccv']
                     self.cc = cc
                     results = processor.authorize_and_release(order=self.order)
-                if not results.success:
-                    log.debug('Payment module error: %s', results)
-                    raise forms.ValidationError(results.message)
+                    if not results.success:
+                        log.debug('Payment module error: %s', results)
+                        raise forms.ValidationError(results.message)
                 else:
                     log.debug('Payment module capture/release success for %s', self.order)
             else:
                 log.debug('Payment module %s cannot do credit authorizations, ignoring AUTH_EARLY setting.',
-                    self.paymentmodule.MODULE.KEY.value)
+                    self.paymentmodule.MODULE.value)
         return data
 
 
@@ -536,3 +545,15 @@ class CreditPayShipForm(SimplePayShipForm):
             cc.ccv = data['ccv']
             self.cc = cc
         form_postsave.send(CreditPayShipForm, form=self)
+
+        
+class CreditCardDetailAdminForm(forms.ModelForm):
+    credit_type = forms.ChoiceField()
+    
+    class Meta:
+        model = CreditCardDetail
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super(CreditCardDetailAdminForm, self).__init__(*args, **kwargs)
+        self.fields['credit_type'].choices = credit_choices()

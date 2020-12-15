@@ -1,13 +1,15 @@
 from django import http
-from django.shortcuts import render_to_response
-from django.template import Context, RequestContext
+from django.shortcuts import render
+from django.template import Context
 from django.template.loader import get_template
 from django.utils.translation import ugettext as _
 from django.views.decorators.cache import never_cache
-from livesettings import config_get_group, config_value
+from django.views.decorators.csrf import csrf_exempt
+from livesettings.functions import config_get_group, config_value
 from payment.config import gateway_live
 from payment.views import confirm, payship
 from satchmo_store.shop.models import Order
+from satchmo_store.shop.models import Cart, NullCart
 from satchmo_store.shop.satchmo_settings import get_satchmo_setting
 from satchmo_utils.dynamic import lookup_url
 from satchmo_utils.views import bad_or_missing
@@ -18,14 +20,15 @@ import logging
 import notifications
 import sha
 
-# TODO: This module doesn't seem to actually record any payments.
+# Notes: payments are recorded in notifications.py
+# This module uses method 3 of Google's choices, notifications by html; you'll need SSL for it to work
 
 log = logging.getLogger("payment.modules.google.processor")
 
 class GoogleCart(object):
     def __init__(self, order, payment_module, live):
         self.settings = payment_module
-        self.cart_xml = self._cart_xml(order)
+        self.cart_xml = self._cart_xml(order).encode('utf-8')
         self.signature = self._signature(live)
 
     def _cart_xml(self, order):
@@ -89,6 +92,7 @@ def confirm_info(request):
     controller.confirm()
     return controller.response
 
+@csrf_exempt
 @never_cache
 def notification(request):
     """
@@ -134,8 +138,19 @@ def success(request):
     except Order.DoesNotExist:
         return bad_or_missing(request, _('Your order has already been processed.'))
 
+
+    # empty user cart
+    for cart in Cart.objects.filter(customer=order.contact):
+        cart.empty()
+        cart.delete()
+
+    cart = Cart.objects.from_request(request, create=False)
+    if isinstance(cart, NullCart):
+        pass
+    else:
+        cart.empty()
+        cart.delete()
+
     del request.session['orderID']
-    context = RequestContext(request, {'order': order})
-    return render_to_response('shop/checkout/success.html',
-                              context_instance=context)
+    return render(request, 'shop/checkout/success.html', {'order': order})
 

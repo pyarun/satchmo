@@ -14,7 +14,13 @@ from django.contrib import admin
 from django.http import HttpResponse, HttpResponseNotFound
 from django.utils.encoding import smart_str
 from django.utils.safestring import mark_safe
-from django.utils.text import truncate_words
+try:
+    from functools import update_wrapper
+except ImportError:
+    from django.utils.functional import update_wrapper
+# Commenting out for Django 1.3 compatibility
+# TODO: Need to find long term solution
+#from django.contrib.admin.templatetags.admin_static import static
 
 import operator
 
@@ -24,7 +30,12 @@ class ForeignKeySearchInput(forms.HiddenInput):
     instead in a <select> box.
     """
 
-    to_string_function = lambda s: truncate_words(s, 14)
+    try:
+        from django.utils.text import truncate_words
+        to_string_function = lambda s: truncate_words(s, 14)
+    except ImportError:
+        from django.utils.text import Truncator
+        to_string_function = lambda s: Truncator(s).words(14)
 
     class Media:
         css = {
@@ -57,21 +68,28 @@ class ForeignKeySearchInput(forms.HiddenInput):
             label = self.label_for_value(value)
         else:
             label = u''
-        return rendered + mark_safe(u'''
+        try:
+            model_name = self.rel.to._meta.module_name
+        except AttributeError:
+            model_name = self.rel.to._meta.model_name            
+        return mark_safe(rendered + u'''
             <style type="text/css" media="screen">
                 #lookup_%(name)s {
                     padding-right:16px;
                     background: url(
-                        %(admin_media_prefix)simg/admin/selector-search.gif
+                        %(static_url)sadmin/img/selector-search.gif
                     ) no-repeat right;
                 }
                 #del_%(name)s {
                     display: none;
+                } 
+                .field-%(name)s {
+                    display: block;
                 }
             </style>
 <input type="text" id="lookup_%(name)s" value="%(label)s"/>
 <a href="#" id="del_%(name)s">
-<img src="%(admin_media_prefix)simg/admin/icon_deletelink.gif" />
+<img src="%(static_url)sadmin/img/icon_deletelink.gif" />
 </a>
 <script type="text/javascript">
             var lookup = $('#lookup_%(name)s')
@@ -98,14 +116,14 @@ class ForeignKeySearchInput(forms.HiddenInput):
                 $('#lookup_%(name)s').val('');
             });
             </script>
-        ''') % {
+        ''' % {
             'search_fields': ','.join(self.search_fields),
-            'admin_media_prefix': settings.ADMIN_MEDIA_PREFIX,
-            'model_name': self.rel.to._meta.module_name,
+            'static_url': settings.STATIC_URL,
+            'model_name': model_name,
             'app_label': self.rel.to._meta.app_label,
             'label': label,
             'name': name,
-        }
+        })
 
 class AutocompleteAdmin(admin.ModelAdmin):
     """Admin class for models using the autocomplete feature.
@@ -134,14 +152,24 @@ class AutocompleteAdmin(admin.ModelAdmin):
         return super(AutocompleteAdmin, self).__call__(request, url)
 
     def get_urls(self):
-        from django.conf.urls.defaults import url
+        from django.conf.urls import url
+        
+        def wrap(view):
+            # This is needed to secure the view so that only admin users can access
+            def wrapper(*args, **kwargs):
+                return self.admin_site.admin_view(view)(*args, **kwargs)
+            return update_wrapper(wrapper, view)
+
         patterns = super(AutocompleteAdmin, self).get_urls()
-        info = self.admin_site.name, self.model._meta.app_label, self.model._meta.module_name
+        try:
+            model_name = self.model._meta.module_name
+        except AttributeError:
+            model_name = self.model._meta.model_name
+        info = self.admin_site.name, self.model._meta.app_label, model_name
         patterns.insert(
                 -1,     # insert just before (.+) rule (see django.contrib.admin.options.ModelAdmin.get_urls)
-                url(
-                    r'^search/$',
-                    self.search,
+                url(r'^search/$',
+                    wrap(self.search),
                     name='%sadmin_%s_%s_search' % info
                     )
                 )
@@ -180,7 +208,7 @@ class AutocompleteAdmin(admin.ModelAdmin):
                     smart_str(field_name)): smart_str(bit)})
                         for field_name in search_fields.split(',')]
                 other_qs = QuerySet(model)
-                other_qs.dup_select_related(qs)
+                other_qs.query.select_related = qs.query.select_related
                 other_qs = other_qs.filter(reduce(operator.or_, or_queries))
                 qs = qs & other_qs
             data = ''.join([u'%s|%s\n' % (to_string_function(f), f.pk) for f in qs])

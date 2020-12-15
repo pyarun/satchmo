@@ -14,13 +14,14 @@ from django.db.models import Q
 from django.utils.encoding import smart_str
 from django.utils.translation import get_language, ugettext, ugettext_lazy as _
 from l10n.utils import moneyfmt, lookup_translation
-from livesettings import config_value, SettingNotSet, config_value_safe
+from livesettings.functions import config_value, config_value_safe
+from livesettings.models import SettingNotSet
 from prices import get_product_quantity_price, get_product_quantity_adjustments
 from product import active_product_types
 from product.prices import PriceAdjustmentCalc
 from satchmo_utils import get_flat_list
 from satchmo_utils.fields import CurrencyField
-from satchmo_utils.thumbnail.field import ImageWithThumbnailField
+from satchmo_utils.satchmo_thumbnail.field import ImageWithThumbnailField
 from satchmo_utils.unique_id import slugify
 import config   #This import is required to make sure livesettings picks up the config values
 import datetime
@@ -63,8 +64,8 @@ def default_weight_unit():
         return 'lb'
 
 class CategoryManager(models.Manager):
-    def active(self):
-        return self.filter(is_active=True)
+    def active(self, **kwargs):
+        return self.filter(is_active=True, **kwargs)
 
     def by_site(self, site=None, **kwargs):
         """Get all categories for this site"""
@@ -73,7 +74,7 @@ class CategoryManager(models.Manager):
 
         site = site.id
 
-        return self.active().filter(site__id__exact = site, **kwargs)
+        return self.active(site__id__exact = site, **kwargs)
 
     def get_by_site(self, site=None, **kwargs):
         if not site:
@@ -86,7 +87,7 @@ class CategoryManager(models.Manager):
         if not site:
             site = Site.objects.get_current()
 
-        return self.active().filter(parent__isnull=True, site=site, **kwargs)
+        return self.active(parent__isnull=True, site=site, **kwargs)
 
     def search_by_site(self, keyword, site=None, include_children=False):
         """Search for categories by keyword.
@@ -117,7 +118,7 @@ class Category(models.Model):
     """
     Basic hierarchical category model for storing products
     """
-    site = models.ForeignKey(Site, verbose_name=_('Site'))
+    site = models.ManyToManyField(Site, verbose_name=_('Site'))
     name = models.CharField(_("Name"), max_length=200)
     slug = models.SlugField(_("Slug"), help_text=_("Used for URLs, auto-generated from name if blank"), blank=True)
     parent = models.ForeignKey('self', blank=True, null=True,
@@ -128,14 +129,15 @@ class Category(models.Model):
         help_text="Optional")
     ordering = models.IntegerField(_("Ordering"), default=0, help_text=_("Override alphabetical order in category display"))
     is_active = models.BooleanField(_("Active"), default=True, blank=True)
-    related_categories = models.ManyToManyField('self', blank=True, null=True,
+    related_categories = models.ManyToManyField('self', blank=True,
         verbose_name=_('Related Categories'), related_name='related_categories')
     objects = CategoryManager()
 
     def _get_mainImage(self):
         img = False
-        if self.images.count() > 0:
-            img = self.images.order_by('sort')[0]
+        images = self.images.order_by('sort')
+        if images:
+            img = images[0]
         else:
             if self.parent_id and self.parent != self:
                 img = self.parent.main_image
@@ -146,22 +148,29 @@ class Category(models.Model):
                 img = CategoryImage.objects.filter(category__isnull=True).order_by('sort')[0]
             except IndexError:
                 import sys
-                print >>sys.stderr, 'Warning: default category image not found - try syncdb'
+                print >>sys.stderr, 'Warning: default category image not found'
         return img
 
     main_image = property(_get_mainImage)
 
-    def active_products(self, variations=True, include_children=False, **kwargs):
+    def active_products(self, variations=False, include_children=False, **kwargs):
+        """Variations determines whether or not product variations are included
+        in most templates we are not returning all variations, just the parent product.
+        """
+        site = Site.objects.get_current()
+        
         if not include_children:
-            qry = self.product_set.all()
+            qry = self.product_set.filter(site=site)
         else:
             cats = self.get_all_children(include_self=True)
-            qry = Product.objects.filter(category__in=cats)
+            qry = Product.objects.filter(site=site, category__in=cats)
 
         if variations:
-            return qry.filter(site=self.site, active=True, **kwargs)
+            slugs = qry.filter(site=site, active=True, **kwargs).values_list('slug',flat=True)
+            return Product.objects.filter(Q(productvariation__parent__product__slug__in = slugs)|Q(slug__in = slugs)).prefetch_related('productimage_set')
         else:
-            return qry.filter(site=self.site, active=True, productvariation__parent__isnull=True, **kwargs)
+            return qry.filter(site=site, active=True, productvariation__parent__isnull=True, **kwargs).prefetch_related('productimage_set')
+ 
 
     def translated_attributes(self, language_code=None):
         if not language_code:
@@ -237,9 +246,10 @@ class Category(models.Model):
 
         if not self.slug:
             self.slug = slugify(self.name, instance=self)
-        cache_key = "cat-%s" % self.site.id
-        cache.delete(cache_key)
         super(Category, self).save(**kwargs)
+        for site in self.site.all().only('id'):
+            cache_key = "cat-%s" % site.id
+            cache.delete(cache_key)        
 
     def _flatten(self, L):
         """
@@ -278,10 +288,10 @@ class Category(models.Model):
         return flat_list
 
     class Meta:
-        ordering = ['site', 'parent__id', 'ordering', 'name']
+        ordering = ['parent__ordering', 'parent__name', 'ordering', 'name']
         verbose_name = _("Category")
         verbose_name_plural = _("Categories")
-        unique_together = ('site', 'slug')
+        # unique_together = ('site', 'slug')
 
 class CategoryTranslation(models.Model):
     """A specific language translation for a `Category`.  This is intended for all descriptions which are not the
@@ -432,11 +442,11 @@ class Discount(models.Model):
     Allows for multiple types of discounts including % and dollar off.
     Also allows finite number of uses.
     """
-    site = models.ForeignKey(Site, verbose_name=_('site'))
+    site = models.ManyToManyField(Site, verbose_name=_('site'))
     description = models.CharField(_("Description"), max_length=100)
     code = models.CharField(_("Discount Code"), max_length=20, unique=True,
         help_text=_("Coupon Code"))
-    active = models.BooleanField(_("Active"))
+    active = models.BooleanField(_("Active"), default=False)
     amount = CurrencyField(_("Discount Amount"), decimal_places=2,
         max_digits=8, blank=True, null=True,
         help_text=_("Enter absolute discount amount OR percentage."))
@@ -457,10 +467,8 @@ class Discount(models.Model):
         default='NONE', blank=True, null=True, max_length=10)
     allValid = models.BooleanField(_("All products?"), default=False,
         help_text=_('Apply this discount to all discountable products? If this is false you must select products below in the "Valid Products" section.'))
-    valid_products = models.ManyToManyField('Product', verbose_name=_("Valid Products"),
-        blank=True, null=True)
-    valid_categories = models.ManyToManyField('Category', verbose_name=_("Valid Categories"),
-        blank=True, null=True)
+    valid_products = models.ManyToManyField('Product', verbose_name=_("Valid Products"), blank=True)
+    valid_categories = models.ManyToManyField('Category', verbose_name=_("Valid Categories"), blank=True)
 
     objects = DiscountManager()
 
@@ -572,7 +580,8 @@ class Discount(models.Model):
     def save(self, **kwargs):
         if self.automatic:
             today = datetime.date.today()
-            keyedcache.cache_delete('discount', 'sale', self.site, today)
+            for site in self.site.all():
+                keyedcache.cache_delete('discount', 'sale', site, today)
         super(Discount, self).save(**kwargs)
 
 
@@ -608,49 +617,49 @@ class Discount(models.Model):
         verbose_name_plural = _("Discounts")
 
     def apply_even_split(cls, discounted, amount):
-        lastct = -1
-        ct = len(discounted)
-        work = {}
+        """Splits ``amount`` to the most even values,
+        but none of them is greater then the value in the dict ``discounted``.
+        > > > cls.apply_even_split({1: Decimal('3.00'), 2: Decimal('8.00'), 3: Decimal('9.00')}, Decimal('10.00'))
+        {1: Decimal('3.00'), 2: Decimal('3.50'), 3: Decimal('3.50')}
+        """
         context = Context(rounding=ROUND_FLOOR)
-        if ct > 0:
-            split_discount = context.divide(amount, Decimal(ct)).quantize(Decimal("0.01"))
-            remainder = amount - context.multiply(split_discount, Decimal(ct))
-        else:
-            split_discount = remainder = Decimal("0.00")
+        eps = Decimal('0.01')
+        zero = 0 * eps
+        amount = context.quantize(amount, eps)
+        lastct = None
+        ct = sentinel = len(discounted)
+        work = {}
+        applied = delta = zero
+        # "eps"     : precision, rounding of every input and the smallest increment for splitting of remainder
+        # "ct"      : how many item from the previous round can be splitted even from the previous round
+        # "applied" : how much has been applied total in the previous round
+        # "delta"   : how much has been applied for limited values in the previous round
 
-        while ct > 0:
-            log.debug("Trying with ct=%i", ct)
-            delta = Decimal("0.00")
-            applied = Decimal("0.00")
+        while ct > 0 and applied < amount and ct != lastct and sentinel:
+            split_discount = context.quantize((amount - delta) / ct, eps)
+            remainder = amount - delta - split_discount * ct
+            lastct = ct
+
+            ct = len(discounted)
             work = {}
-            should_apply_remainder = True
+            applied = delta = zero
             for lid, price in discounted.items():
-                if should_apply_remainder \
-                    and remainder > Decimal('0') \
-                    and price > split_discount + remainder:
-                    to_apply = split_discount + remainder
-                    should_apply_remainder = False
-                elif price > split_discount:
-                    to_apply = split_discount
+                if price > split_discount:
+                    if remainder:
+                        to_apply = split_discount + eps
+                        remainder -= eps
+                    else:
+                        to_apply = split_discount
                 else:
-                    to_apply = price
-                    delta += price
+                    to_apply = context.quantize(price, eps)
+                    delta += to_apply
                     ct -= 1
-
                 work[lid] = to_apply
                 applied += to_apply
+            sentinel -= 1
 
-            if applied >= amount - Decimal("0.01"):
-                ct = 0
-
-            if ct == lastct:
-                ct = 0
-            else:
-                lastct = ct
-
-            if ct > 0:
-                split_discount = (amount-delta)/ct
-
+        assert sentinel >= 0, "Infinite loop in 'apply_even_split'"
+        assert applied == amount or applied <= amount and applied == delta, "Internal error in 'apply_even_split'"
         round_cents(work)
         return work
 
@@ -672,7 +681,7 @@ class OptionGroup(models.Model):
     A set of options that can be applied to an item.
     Examples - Size, Color, Shape, etc
     """
-    site = models.ForeignKey(Site, verbose_name=_('Site'))
+    site = models.ManyToManyField(Site, verbose_name=_('Site'))
     name = models.CharField(_("Name of Option Group"), max_length=50,
         help_text=_("This will be the text displayed on the product page."))
     description = models.CharField(_("Detailed Description"), max_length=100,
@@ -755,7 +764,7 @@ class Option(models.Model):
     unique_id = property(_get_unique_id)
 
     def __repr__(self):
-        return u"<Option: %s>" % self.name
+        return "<Option: %s>" % repr(self.name)
 
     def __unicode__(self):
         return u'%s: %s' % (self.option_group.name, self.name)
@@ -808,7 +817,6 @@ class ProductManager(models.Manager):
             site = Site.objects.get_current()
         return self.get(site = site, **kwargs)
 
-
     def recent_by_site(self, **kwargs):
         query = self.active_by_site(**kwargs)
         if query.count() == 0:
@@ -818,11 +826,15 @@ class ProductManager(models.Manager):
         return query
 
 
+def get_taxable():
+    return config_value('TAX', 'PRODUCTS_TAXABLE_BY_DEFAULT')
+    
+
 class Product(models.Model):
     """
     Root class for all Products
     """
-    site = models.ForeignKey(Site, verbose_name=_('Site'))
+    site = models.ManyToManyField(Site, verbose_name=_('Site'))
     name = models.CharField(_("Full Name"), max_length=255, blank=False,
         help_text=_("This is what the product will be called in the default site language.  To add non-default translations, use the Product Translation section below."))
     slug = models.SlugField(_("Slug Name"), blank=True,
@@ -846,10 +858,10 @@ class Product(models.Model):
     width_units = models.CharField(_("Width units"), max_length=3, null=True, blank=True)
     height = models.DecimalField(_("Height"), max_digits=6, decimal_places=2, null=True, blank=True)
     height_units = models.CharField(_("Height units"), max_length=3, null=True, blank=True)
-    related_items = models.ManyToManyField('self', blank=True, null=True, verbose_name=_('Related Items'), related_name='related_products')
-    also_purchased = models.ManyToManyField('self', blank=True, null=True, verbose_name=_('Previously Purchased'), related_name='also_products')
+    related_items = models.ManyToManyField('self', blank=True, verbose_name=_('Related Items'), related_name='related_products')
+    also_purchased = models.ManyToManyField('self', blank=True, verbose_name=_('Previously Purchased'), related_name='also_products')
     total_sold = models.DecimalField(_("Total sold"),  max_digits=18, decimal_places=6, default='0')
-    taxable = models.BooleanField(_("Taxable"), default=lambda: config_value('TAX', 'PRODUCTS_TAXABLE_BY_DEFAULT'))
+    taxable = models.BooleanField(_("Taxable"), default=get_taxable)
     taxClass = models.ForeignKey('TaxClass', verbose_name=_('Tax Class'), blank=True, null=True, help_text=_("If it is taxable, what kind of tax?"))
     shipclass = models.CharField(_('Shipping'), choices=SHIP_CLASS_CHOICES, default="DEFAULT", max_length=10,
         help_text=_("If this is 'Default', then we'll use the product type to determine if it is shippable."))
@@ -998,10 +1010,10 @@ class Product(models.Model):
             kwargs={'product_slug': self.slug})
 
     class Meta:
-        ordering = ('site', 'ordering', 'name')
+        ordering = ('ordering', 'name')
         verbose_name = _("Product")
         verbose_name_plural = _("Products")
-        unique_together = (('site', 'sku'),('site','slug'))
+        #unique_together = (('site', 'sku'),('site','slug'))
 
     def save(self, **kwargs):
         if not self.pk:
@@ -1025,10 +1037,11 @@ class Product(models.Model):
             for module, subtype in active_product_types():
                 try:
                     subclass = getattr(self, subtype.lower())
-                    gettype = getattr(subclass, '_get_subtype')
-                    subtype = gettype()
-                    if not subtype in types:
-                        types.append(subtype)
+                    if subclass is not None:
+                        gettype = getattr(subclass, '_get_subtype')
+                        subtype = gettype()
+                        if not subtype in types:
+                            types.append(subtype)
                 except models.ObjectDoesNotExist:
                     pass
         except SettingNotSet:
@@ -1222,15 +1235,17 @@ class ProductPriceLookupManager(models.Manager):
 
         objs = []
         for qty, price in pricelist:
-            obj = ProductPriceLookup(productslug=product.slug,
-                siteid=product.site_id,
-                active=product.active,
-                price=price,
-                quantity=qty,
-                discountable=product.is_discountable,
-                items_in_stock=product.items_in_stock)
-            obj.save()
-            objs.append(obj)
+            for site in product.site.all():            
+                obj = ProductPriceLookup(productslug=product.slug,
+                                         siteid=site.pk,
+                                         active=product.active,
+                                         price=price,
+                                         quantity=qty,
+                                         discountable=product.is_discountable,
+                                         items_in_stock=product.items_in_stock)
+                                         #productimage_set=product.productimage_set)
+                obj.save()
+                objs.append(obj)
         return objs
 
     def create_for_configurableproduct(self, configproduct):
@@ -1251,21 +1266,22 @@ class ProductPriceLookupManager(models.Manager):
 
         objs = []
         for qty, price in pricelist:
-            obj = ProductPriceLookup(productslug=product.slug,
-                parentid=parent.pk,
-                siteid=product.site_id,
-                active=product.active,
-                price=price,
-                quantity=qty,
-                key=variation.optionkey,
-                discountable=product.is_discountable,
-                items_in_stock=product.items_in_stock)
-            obj.save()
-            objs.append(obj)
+            for site in product.site.all():
+                obj = ProductPriceLookup(productslug=product.slug,
+                                         parentid=parent.pk,
+                                         siteid=site.pk,
+                                         active=product.active,
+                                         price=price,
+                                         quantity=qty,
+                                         key=variation.optionkey,
+                                         discountable=product.is_discountable,
+                                         items_in_stock=product.items_in_stock)
+                obj.save()
+                objs.append(obj)
         return objs
 
     def delete_for_product(self, product):
-        for obj in self.filter(productslug=product.slug, siteid=product.site.id):
+        for obj in self.filter(productslug=product.slug, siteid__in=list(product.site.all().values_list('pk', flat=True))):
             obj.delete()
 
     def rebuild_all(self, site=None):
@@ -1299,19 +1315,29 @@ class ProductPriceLookup(models.Model):
     siteid = models.IntegerField()
     key = models.CharField(max_length=60, null=True)
     parentid = models.IntegerField(null=True)
-    productslug = models.CharField(max_length=255)
+    productslug = models.CharField(max_length=255, db_index = True)
     price = models.DecimalField(max_digits=14, decimal_places=6)
     quantity = models.DecimalField(max_digits=18, decimal_places=6)
-    active = models.BooleanField()
-    discountable = models.BooleanField()
+    active = models.BooleanField(default=False)
+    discountable = models.BooleanField(default=False)
     items_in_stock = models.DecimalField(max_digits=18, decimal_places=6)
 
     objects = ProductPriceLookupManager()
 
     def _product(self):
-        return Product.objects.get(slug=self.productslug)
+        return Product.objects.get(slug=self.productslug, site__id=self.siteid)
 
     product = property(fget=_product)
+
+    def _productimage_set(self):
+        try:
+                return ProductImage.objects.filter(product=self.product)
+        except ProductImage.DoesNotExist:
+                return None
+        except Product.DoesNotExist:
+                return None
+
+    productimage_set = property(fget=_productimage_set)
 
     def _dynamic_price(self):
         """Get the current price as modified by all listeners."""

@@ -1,8 +1,8 @@
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
+from django.utils import timezone
 from product.models import Product, get_product_quantity_price, get_product_quantity_adjustments
 from decimal import Decimal
-import datetime
 from satchmo_utils import add_month
 from satchmo_utils.fields import CurrencyField
 
@@ -25,11 +25,11 @@ class SubscriptionProduct(models.Model):
     )
     expire_unit = models.CharField(_("Expire Unit"), max_length=5, choices=SUBSCRIPTION_UNITS, default="DAY", null=False)
     SHIPPING_CHOICES = (
-        ('0', _('No Shipping Charges')),
-        ('1', _('Pay Shipping Once')),
-        ('2', _('Pay Shipping Each Billing Cycle')),
+        (0, _('No Shipping Charges')),
+        (1, _('Pay Shipping Once')),
+        (2, _('Pay Shipping Each Billing Cycle')),
     )
-    is_shippable = models.IntegerField(_("Shippable?"), help_text=_("Is this product shippable?"), max_length=1, choices=SHIPPING_CHOICES)
+    is_shippable = models.IntegerField(_("Shippable?"), help_text=_("Is this product shippable?"), choices=SHIPPING_CHOICES)
 
     is_subscription = True
 
@@ -98,9 +98,9 @@ class SubscriptionProduct(models.Model):
 
     def calc_expire_date(self, date=None):
         if date is None:
-            date = datetime.datetime.now()
+            date = timezone.now()
         if self.expire_unit == "DAY":
-            expiredate = date + datetime.timedelta(days=self.expire_length)
+            expiredate = date + timezone.timedelta(days=self.expire_length)
         else:
             expiredate = add_month(date, n=self.expire_length)
 
@@ -141,9 +141,9 @@ class Trial(models.Model):
 
     def calc_expire_date(self, date=None):
         if date is None:
-            date = datetime.datetime.now()
+            date = timezone.now()
         if self.subscription.expire_unit == "DAY":
-            expiredate = date + datetime.timedelta(days=self.expire_length)
+            expiredate = date + timezone.timedelta(days=self.expire_length)
         else:
             expiredate = add_month(date, n=self.expire_length)
 

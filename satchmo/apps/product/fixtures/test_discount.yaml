@@ -1,13 +1,13 @@
-- fields: {description: '', name: Book type, sort_order: 1, site: 1}
+- fields: {description: '', name: Book type, sort_order: 1, site: [1]}
   model: product.optiongroup
   pk: 3
-- fields: {description: '', name: sizes, sort_order: 1, site: 1}
+- fields: {description: '', name: sizes, sort_order: 1, site: [1]}
   model: product.optiongroup
   pk: 1
-- fields: {description: '', name: colors, sort_order: 2, site: 1}
+- fields: {description: '', name: colors, sort_order: 2, site: [1]}
   model: product.optiongroup
   pk: 2
-- fields: {description: '', name: Full/Upgrade, sort_order: 5, site: 1}
+- fields: {description: '', name: Full/Upgrade, sort_order: 5, site: [1]}
   model: product.optiongroup
   pk: 4
 - fields: {sort_order: 1, name: Small, option_group: 1, price_change: null, value: S}
@@ -46,187 +46,32 @@
     value: upgrade}
   model: product.option
   pk: 11
-- fields:
-    active: true
-    allowedUses: null
-    amount: '10'
-    code: test10
-    description: Test Amount 10
-    endDate: 5000-01-01
-    shipping: 'NONE'
-    minOrder: null
-    numUses: null
-    percentage: null
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 1
-- fields:
-    active: true
-    allowedUses: null
-    amount: null
-    code: test20
-    description: Test Percent 20
-    endDate: 5000-01-01
-    shipping: 'NONE'
-    minOrder: null
-    numUses: null
-    percentage: '20'
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 2
-- fields:
-    active: true
-    allowedUses: null
-    amount: '10'
-    code: test10ship
-    description: Test Amount 10 w/ship
-    endDate: 5000-01-01
-    shipping: 'APPLY'
-    minOrder: null
-    numUses: null
-    percentage: null
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 3
-- fields:
-    active: true
-    allowedUses: null
-    amount: null
-    code: test20ship
-    description: Test Percent 20 w/ship
-    endDate: 5000-01-01
-    shipping: 'APPLY'
-    minOrder: null
-    numUses: null
-    percentage: '20'
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 4
-- fields:
-    active: true
-    allowedUses: null
-    amount: '10'
-    code: test10freeship
-    description: Test Amount 10 Free Ship
-    endDate: 5000-01-01
-    shipping: 'FREE'
-    minOrder: null
-    numUses: null
-    percentage: null
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 5
-- fields:
-    active: true
-    allowedUses: null
-    amount: null
-    code: test20freeship
-    description: Test Percent 20 Free ship
-    endDate: 5000-01-01
-    shipping: 'FREE'
-    minOrder: null
-    numUses: null
-    percentage: '20'
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 6
-- fields:
-    active: true
-    allowedUses: null
-    amount: null
-    code: test10-product
-    description: Test Percent 10 (Product)
-    endDate: 5000-01-01
-    shipping: 'NONE'
-    minOrder: null
-    numUses: null
-    percentage: '10'
-    startDate: 2007-12-15
-    valid_products: [15]
-    site: 1
-    allValid: false
-  model: product.discount
-  pk: 7
-- fields:
-    active: true
-    allowedUses: null
-    amount: null
-    automatic: true
-    code: test20-auto
-    description: Test Percent 20 (Auto)
-    endDate: 5000-01-01
-    shipping: 'NONE'
-    minOrder: null
-    numUses: null
-    percentage: '20'
-    startDate: 2007-12-15
-    valid_products: [15]
-    site: 1
-    allValid: false
-  model: product.discount
-  pk: 8
-- fields:
-    active: true
-    allowedUses: null
-    amount: null
-    automatic: true
-    code: test20-auto-all
-    description: Test Percent 20 (Auto) (All)
-    endDate: 5000-01-01
-    shipping: 'NONE'
-    minOrder: null
-    numUses: null
-    percentage: '20'
-    startDate: 2007-12-15
-    valid_products: []
-    site: 1
-    allValid: true
-  model: product.discount
-  pk: 9
 - fields: {description: Books, meta: null, name: Books, ordering: 0, parent: null,
-    slug: book, site: 1}
+    slug: book, site: [1]}
   model: product.category
   pk: 3
 - fields: {description: Women's Shirts, meta: null, name: Shirts, ordering: 0, parent: null,
-    slug: shirts, site: 1}
+    slug: shirts, site: [1]}
   model: product.category
   pk: 1
 - fields: {description: '', meta: null, name: Software, ordering: 0, parent: null,
-    slug: software, site: 1}
+    slug: software, site: [1]}
   model: product.category
   pk: 7
 - fields: {description: Short sleeve shirts, meta: null, name: Short Sleeve, ordering: 0,
-    parent: 1, slug: shortsleeve, site: 1}
+    parent: 1, slug: shortsleeve, site: [1]}
   model: product.category
   pk: 2
 - fields: {description: Fiction Books, meta: null, name: Fiction, ordering: 0, parent: 3,
-    slug: fiction, site: 1}
+    slug: fiction, site: [1]}
   model: product.category
   pk: 4
 - fields: {description: Non Fiction, meta: null, name: Non Fiction, ordering: 0, parent: 3,
-    slug: nonfiction, site: 1}
+    slug: nonfiction, site: [1]}
   model: product.category
   pk: 6
 - fields: {description: Science Fiction, meta: null, name: Science Fiction, ordering: 0,
-    parent: 4, slug: scifi, site: 1}
+    parent: 4, slug: scifi, site: [1]}
   model: product.category
   pk: 5
 - fields:
@@ -249,7 +94,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 3
 - fields:
@@ -272,7 +117,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 14
 - fields:
@@ -295,7 +140,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 15
 - fields:
@@ -318,7 +163,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 16
 - fields:
@@ -341,7 +186,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 1
 - fields:
@@ -364,7 +209,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 11
 - fields:
@@ -387,7 +232,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 13
 - fields:
@@ -410,7 +255,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 12
 - fields:
@@ -433,7 +278,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 8
 - fields:
@@ -456,7 +301,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 10
 - fields:
@@ -479,7 +324,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 9
 - fields:
@@ -502,7 +347,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 5
 - fields:
@@ -525,7 +370,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 7
 - fields:
@@ -548,7 +393,7 @@
     taxable: true
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 6
 - fields:
@@ -571,7 +416,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 2
 - fields:
@@ -594,7 +439,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 4
 - fields:
@@ -617,7 +462,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 17
 - fields:
@@ -640,7 +485,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 18
 - fields:
@@ -663,7 +508,7 @@
     taxable: false
     weight: null
     width: null
-    site: 1
+    site: [1]
   model: product.product
   pk: 19
 - fields:
@@ -772,4 +617,159 @@
 - fields: {expires: null, price: '7.99', product: 4, quantity: '1'}
   model: product.price
   pk: 4
+- fields:
+    active: true
+    allowedUses: null
+    amount: '10'
+    code: test10
+    description: Test Amount 10
+    endDate: 5000-01-01
+    shipping: 'NONE'
+    minOrder: null
+    numUses: null
+    percentage: null
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 1
+- fields:
+    active: true
+    allowedUses: null
+    amount: null
+    code: test20
+    description: Test Percent 20
+    endDate: 5000-01-01
+    shipping: 'NONE'
+    minOrder: null
+    numUses: null
+    percentage: '20'
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 2
+- fields:
+    active: true
+    allowedUses: null
+    amount: '10'
+    code: test10ship
+    description: Test Amount 10 w/ship
+    endDate: 5000-01-01
+    shipping: 'APPLY'
+    minOrder: null
+    numUses: null
+    percentage: null
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 3
+- fields:
+    active: true
+    allowedUses: null
+    amount: null
+    code: test20ship
+    description: Test Percent 20 w/ship
+    endDate: 5000-01-01
+    shipping: 'APPLY'
+    minOrder: null
+    numUses: null
+    percentage: '20'
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 4
+- fields:
+    active: true
+    allowedUses: null
+    amount: '10'
+    code: test10freeship
+    description: Test Amount 10 Free Ship
+    endDate: 5000-01-01
+    shipping: 'FREE'
+    minOrder: null
+    numUses: null
+    percentage: null
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 5
+- fields:
+    active: true
+    allowedUses: null
+    amount: null
+    code: test20freeship
+    description: Test Percent 20 Free ship
+    endDate: 5000-01-01
+    shipping: 'FREE'
+    minOrder: null
+    numUses: null
+    percentage: '20'
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 6
+- fields:
+    active: true
+    allowedUses: null
+    amount: null
+    code: test10-product
+    description: Test Percent 10 (Product)
+    endDate: 5000-01-01
+    shipping: 'NONE'
+    minOrder: null
+    numUses: null
+    percentage: '10'
+    startDate: 2007-12-15
+    valid_products: [15]
+    site: [1]
+    allValid: false
+  model: product.discount
+  pk: 7
+- fields:
+    active: true
+    allowedUses: null
+    amount: null
+    automatic: true
+    code: test20-auto
+    description: Test Percent 20 (Auto)
+    endDate: 5000-01-01
+    shipping: 'NONE'
+    minOrder: null
+    numUses: null
+    percentage: '20'
+    startDate: 2007-12-15
+    valid_products: [15]
+    site: [1]
+    allValid: false
+  model: product.discount
+  pk: 8
+- fields:
+    active: true
+    allowedUses: null
+    amount: null
+    automatic: true
+    code: test20-auto-all
+    description: Test Percent 20 (Auto) (All)
+    endDate: 5000-01-01
+    shipping: 'NONE'
+    minOrder: null
+    numUses: null
+    percentage: '20'
+    startDate: 2007-12-15
+    valid_products: []
+    site: [1]
+    allValid: true
+  model: product.discount
+  pk: 9
 
